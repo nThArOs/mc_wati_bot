@@ -129,6 +129,8 @@ class MCBot:
         self.patrol_route = []
         self.patrol_index = 0
         self.patrol_label = None
+        self.route_loop = False
+        self.route_wait = 0
         self.task_generation = 0
 
         self.bot_args = {
@@ -512,6 +514,8 @@ class MCBot:
         self.patrol_route = route
         self.patrol_index = 0
         self.patrol_label = label
+        self.route_loop = True
+        self.route_wait = PATROL_WAIT
         self.stop_movement()
 
         self.chat(f"Je patrouille : {label}.")
@@ -519,6 +523,115 @@ class MCBot:
         self.log(
             chalk.cyan(
                 f"Patrouille activée ({len(route)} étapes) : {label}"
+            )
+        )
+
+        self.goto_patrol_index(generation)
+
+        return True
+
+
+    # ========================================================
+    # ALLER QUELQUE PART EN SUIVANT LE GRAPHE
+    #
+    # chemin <point> : trajet ponctuel (pas de boucle), calcule
+    # le plus court chemin dans GRAPH entre le point du graphe
+    # le plus proche du bot et la destination, puis enchaîne
+    # les points un par un.
+    # ========================================================
+
+    def shortest_graph_path(self, start, target):
+        if start is None or target is None:
+            return None
+
+        if start == target:
+            return [start]
+
+        came_from = {start: None}
+        queue = [start]
+
+        while queue:
+            node = queue.pop(0)
+
+            if node == target:
+                break
+
+            for neighbor in GRAPH.get(node, []):
+                if neighbor not in came_from:
+                    came_from[neighbor] = node
+                    queue.append(neighbor)
+
+        if target not in came_from:
+            return None
+
+        path = []
+        node = target
+
+        while node is not None:
+            path.append(node)
+            node = came_from[node]
+
+        path.reverse()
+
+        return path
+
+
+    def go_via_graph(self, destination):
+        destination = destination.strip().lower()
+
+        if not destination:
+            self.log(
+                chalk.yellow("Destination manquante.")
+            )
+            self.chat("Où veux-tu que j'aille via le graphe ?")
+            return False
+
+        if destination not in POINTS_INTERET or destination not in GRAPH:
+            self.log(
+                chalk.red(
+                    f"Point inconnu du graphe : {destination}"
+                )
+            )
+            self.chat("Je ne connais pas ce point dans mon graphe.")
+            return False
+
+        if self.patrol_active:
+            self.chat("Je suis déjà en mouvement, tape 'stop' d'abord.")
+            return False
+
+        start_point = self.nearest_point(
+            self.all_graph_points(),
+            self.get_bot_position(),
+        )
+
+        path = self.shortest_graph_path(start_point, destination)
+
+        if not path:
+            self.log(
+                chalk.red(
+                    f"Aucun chemin trouvé vers {destination}."
+                )
+            )
+            self.chat("Je ne trouve pas de chemin vers ce point.")
+            return False
+
+        self.task_generation += 1
+        generation = self.task_generation
+
+        self.mode = "PATROL_ROUTE"
+        self.patrol_active = True
+        self.patrol_route = path
+        self.patrol_index = 0
+        self.patrol_label = destination
+        self.route_loop = False
+        self.route_wait = 0
+        self.stop_movement()
+
+        self.chat(f"Je rejoins {destination} en suivant le graphe.")
+
+        self.log(
+            chalk.cyan(
+                f"Trajet via le graphe ({len(path)} étapes) → {destination}"
             )
         )
 
@@ -591,9 +704,21 @@ class MCBot:
         ):
             return
 
-        self.patrol_index = (
-            (self.patrol_index + 1) % len(self.patrol_route)
-        )
+        if self.patrol_index >= len(self.patrol_route) - 1:
+            if self.route_loop:
+                self.patrol_index = 0
+            else:
+                self.log(
+                    chalk.green(
+                        f"✓ Arrivé à destination via le graphe : "
+                        f"{self.patrol_label}"
+                    )
+                )
+                self.chat(f"Je suis arrivé à {self.patrol_label} !")
+                self.cancel_task()
+                return
+        else:
+            self.patrol_index += 1
 
         self.goto_patrol_index(generation)
 
@@ -682,6 +807,22 @@ class MCBot:
         if lower.startswith("patrol "):
             self.handle_patrol_command(
                 command[len("patrol "):]
+            )
+            return True
+
+        # ----------------------------------------------------
+        # ALLER QUELQUE PART VIA LE GRAPHE (trajet ponctuel)
+        # ----------------------------------------------------
+
+        if lower.startswith("chemin "):
+            self.go_via_graph(
+                command[len("chemin "):]
+            )
+            return True
+
+        if lower.startswith("route "):
+            self.go_via_graph(
+                command[len("route "):]
             )
             return True
 
@@ -840,6 +981,7 @@ class MCBot:
                         "  players               → joueurs visibles\n"
                         "  patrouille            → patrouiller toute la ville\n"
                         "  patrouille <quartier> → patrouiller un quartier\n"
+                        "  chemin <point>        → rejoindre un point via le graphe\n"
                         "  quartiers             → lister les quartiers\n"
                         "  stop                  → arrêter la tâche\n"
                         "  say <message>         → parler\n"
@@ -977,7 +1119,8 @@ class MCBot:
                 )
 
                 def continue_patrol():
-                    time.sleep(PATROL_WAIT)
+                    if self.route_wait > 0:
+                        time.sleep(self.route_wait)
 
                     if (
                         self.patrol_active
