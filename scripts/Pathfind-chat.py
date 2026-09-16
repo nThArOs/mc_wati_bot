@@ -14,6 +14,7 @@ import threading
 mineflayer = require("mineflayer")
 pathfinder_lib = require("mineflayer-pathfinder")
 auto_eat = require("mineflayer-auto-eat").default
+web_inventory = require("mineflayer-web-inventory")
 vec3 = require("vec3")
 
 
@@ -25,6 +26,8 @@ SERVER_HOST = "game02.octoheberg.fr"
 SERVER_PORT = 25571
 BOT_NAME = "pathfinder-bot"
 RECONNECT = True
+
+WEB_INVENTORY_PORT = 3000
 
 # Maison : indépendante des autres destinations
 HOME = {
@@ -131,6 +134,7 @@ class MCBot:
         self.patrol_label = None
         self.route_loop = False
         self.route_wait = 0
+        self.web_inventory_started = False
         self.task_generation = 0
 
         self.bot_args = {
@@ -1037,6 +1041,31 @@ class MCBot:
             "startAt": 14,
             "bannedFood": [],
         }
+
+        # Un seul serveur web pour toute la vie du process,
+        # inutile de le relancer à chaque reconnexion.
+        if not self.web_inventory_started:
+            try:
+                web_inventory(
+                    self.bot,
+                    {"port": WEB_INVENTORY_PORT},
+                )
+
+                self.web_inventory_started = True
+
+                self.log(
+                    chalk.green(
+                        f"Inventaire web : "
+                        f"http://localhost:{WEB_INVENTORY_PORT}"
+                    )
+                )
+
+            except Exception as e:
+                self.log(
+                    chalk.red(
+                        f"Web inventory error: {e}"
+                    )
+                )
 
         self.start_events()
 
