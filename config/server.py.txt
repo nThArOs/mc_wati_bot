@@ -1,0 +1,6 @@
+SERVER_HOST = "game02.octoheberg.fr"
+SERVER_PORT = 25571
+
+BOT_VERSION = "1.21.11"
+
+RECONNECT = True

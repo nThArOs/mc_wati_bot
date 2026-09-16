@@ -1,0 +1,59 @@
+HOME = {
+    "x": 1802,
+    "y": 130,
+    "z": -1328,
+}
+
+PATROL_RADIUS = 16
+PATROL_WAIT_SECONDS = 5
+
+
+POINTS_INTERET = {
+    "cathderal": {
+        "x": 1776,
+        "y": 129,
+        "z": -1328,
+    },
+
+    "george orwell": {
+        "x": 1697,
+        "y": 96,
+        "z": -1323,
+    },
+
+    "arc de triomphe": {
+        "x": 1683,
+        "y": 96,
+        "z": -1273,
+    },
+
+    "pierre bourdieu": {
+        "x": 1746,
+        "y": 95,
+        "z": -1418,
+    },
+
+    "usine a fer": {
+        "x": 1690,
+        "y": 132,
+        "z": -1145,
+    },
+
+    "churh": {
+        "x": 1822,
+        "y": 112,
+        "z": -1413,
+    },
+
+    "theatre": {
+        "x": 1714,
+        "y": 95,
+        "z": -1466,
+    },
+
+    "salle des coffres": {
+        "x": 1792,
+        "y": 102,
+        "z": -1158,
+    },
+}
