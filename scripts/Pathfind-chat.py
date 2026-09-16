@@ -9,29 +9,25 @@ import threading
 
 
 # ============================================================
-# IMPORT JAVASCRIPT LIBRARIES
+# LIBRARIES
 # ============================================================
 
 mineflayer = require("mineflayer")
-mineflayer_pathfinder = require("mineflayer-pathfinder")
-mineflayer_auto_eat = require("mineflayer-auto-eat").default
+pathfinder_lib = require("mineflayer-pathfinder")
+auto_eat = require("mineflayer-auto-eat").default
 vec3 = require("vec3")
 
 
 # ============================================================
-# SERVER CONFIGURATION
+# CONFIG
 # ============================================================
 
-server_host = "game02.octoheberg.fr"
-server_port = 25571
+SERVER_HOST = "game02.octoheberg.fr"
+SERVER_PORT = 25571
+BOT_NAME = "pathfinder-bot"
+RECONNECT = True
 
-reconnect = True
-
-
-# ============================================================
-# HOME / PATROL CONFIGURATION
-# ============================================================
-
+# Maison : indépendante des autres destinations
 HOME = {
     "x": 1802,
     "y": 130,
@@ -39,210 +35,113 @@ HOME = {
 }
 
 PATROL_RADIUS = 16
-PATROL_WAIT_SECONDS = 5
-
-
-# ============================================================
-# POINTS D'INTERET
-# ============================================================
+PATROL_WAIT = 5
 
 POINTS_INTERET = {
+    "usine a fer": (1690, 132, -1145),
+    "usine à fer": (1690, 132, -1145),
+    
+    "salle des coffres": (1792, 102, -1158),
+    
+    "arc de triomphe": (1683, 96, -1273),
+    
+    "george orwell": (1697, 96, -1323),
+    "place gauche": (1608, 95, -1236),
+    "place haute": (1551, 95, -1271),
+    "place droite": (1629, 95, -1311),
+    "parc": (1629, 95, -1311),
+    
+    "palace": (1707, 97, -1374),
+    "palais": (1634, 95, -1481),
+    "theatre": (1714, 95, -1466),
+    "théâtre": (1714, 95, -1466),
 
-    # --------------------------------------------------------
-    # Cathédrale
-    # --------------------------------------------------------
-
-    "cathedral": {
-        "x": 1776,
-        "y": 129,
-        "z": -1328,
-    },
-
-    "cathedrale": {
-        "x": 1776,
-        "y": 129,
-        "z": -1328,
-    },
-
-    "cathderal": {
-        "x": 1776,
-        "y": 129,
-        "z": -1328,
-    },
-
-    "cathédrale": {
-        "x": 1776,
-        "y": 129,
-        "z": -1328,
-    },
-
-    # --------------------------------------------------------
-    # George Orwell
-    # --------------------------------------------------------
-
-    "george orwell": {
-        "x": 1697,
-        "y": 96,
-        "z": -1323,
-    },
-
-    # --------------------------------------------------------
-    # Arc de Triomphe
-    # --------------------------------------------------------
-
-    "arc de triomphe": {
-        "x": 1683,
-        "y": 96,
-        "z": -1273,
-    },
-
-    # --------------------------------------------------------
-    # Pierre Bourdieu
-    # --------------------------------------------------------
-
-    "pierre bourdieu": {
-        "x": 1746,
-        "y": 95,
-        "z": -1418,
-    },
-
-    # --------------------------------------------------------
-    # Usine à fer
-    # --------------------------------------------------------
-
-    "usine a fer": {
-        "x": 1690,
-        "y": 132,
-        "z": -1145,
-    },
-
-    "usine à fer": {
-        "x": 1690,
-        "y": 132,
-        "z": -1145,
-    },
-
-    # --------------------------------------------------------
-    # Church
-    # --------------------------------------------------------
-
-    "churh": {
-        "x": 1822,
-        "y": 112,
-        "z": -1413,
-    },
-
-    "church": {
-        "x": 1822,
-        "y": 112,
-        "z": -1413,
-    },
-
-    # --------------------------------------------------------
-    # Theatre
-    # --------------------------------------------------------
-
-    "theatre": {
-        "x": 1714,
-        "y": 95,
-        "z": -1466,
-    },
-
-    "théâtre": {
-        "x": 1714,
-        "y": 95,
-        "z": -1466,
-    },
-
-    # --------------------------------------------------------
-    # Salle des coffres
-    # --------------------------------------------------------
-
-    "salle des coffres": {
-        "x": 1792,
-        "y": 102,
-        "z": -1158,
-    },
+   
+    
+    "horloge": (1746, 95, -1418),
+    "river": (1787, 119, -1381),
+    "intersection 1": (1796, 104, -1419),
+    "church": (1822, 112, -1413),
+    "intersection 2": (1820, 119, -1388),
+    "bourdieu-cathedral": (1820, 119, -1388),
+    
+    "cathedral": (1776, 129, -1328),
+    "cathedrale": (1776, 129, -1328),
 }
 
+QUARTIERS = {
+    "Haute ville": ["usine a fer", "salle des coffres", "arc de triomphe"],
+    "place george orwell": ["george orwell", "place gauche", "place haute", "place droite", "parc"],
+    "quartier du theatre": ["theatre","palace","palais"],
+    "quartier pierre bourdieu": ["horloge", "intersection 1","river", "church", "intersection 2"],
+    "quartier de la cathedrale": ["cathedral", "droite","parvis","gauche"],
+}
+
+# =========================
+# Graphe des routes entre points
+# =========================
+
+GRAPH = {
+    "usine a fer": ["salle des coffres","arc de triomphe"],
+    "salle des coffres": ["usine a fer", "arc de triomphe"],
+    "arc de triomphe": ["usine a fer","salle des coffres", "george orwell"],
+
+    "george orwell": ["arc de triomphe", "horloge", "place gauche", "place droite", "parc","palace"],
+    "place gauche": ["george orwell", "place haute", "parc"],
+    "place haute": ["place gauche", "place droite", "parc"],
+    "place droite": ["place haute", "george orwell", "parc"],
+    "parc": ["george orwell", "place gauche", "place haute", "place droite"],
+
+    "horloge": ["george orwell", "theatre", "intersection 1"],
+    "theatre": ["horloge","palace","palais"],
+
+    "intersection 1": ["horloge", "church", "river"],
+    "river": ["intersection 1"],
+
+    "church": ["intersection 1", "intersection 2"],
+    "intersection 2": ["church", "cathedral"],
+    "cathedral": ["intersection 2"],
+}
 
 # ============================================================
-# ELIZA CONFIGURATION
+# ELIZA
 # ============================================================
 
 eliza_bot = eliza.Eliza()
-
-eliza_path = os.path.join(
-    os.path.dirname(__file__),
-    "eliza",
-    "doctor.txt",
+eliza_bot.load(
+    os.path.join(
+        os.path.dirname(__file__),
+        "eliza",
+        "doctor.txt",
+    )
 )
-
-eliza_bot.load(eliza_path)
 
 
 # ============================================================
-# MINECRAFT BOT
+# BOT
 # ============================================================
 
 class MCBot:
 
-    def __init__(self, bot_name):
+    def __init__(self, name):
+        self.bot_name = name
+        self.reconnect = RECONNECT
+        self.mode = "IDLE"
+        self.patrol_active = False
+        self.patrol_quartier = None
+        self.patrol_current_point = None
+        self.task_generation = 0
 
         self.bot_args = {
-            "host": server_host,
-            "port": server_port,
-            "username": bot_name,
+            "host": SERVER_HOST,
+            "port": SERVER_PORT,
+            "username": name,
             "auth": "microsoft",
             "version": "1.21.11",
             "hideErrors": False,
         }
 
-        self.reconnect = reconnect
-        self.bot_name = bot_name
-
-        # ====================================================
-        # MODE ACTUEL
-        #
-        # IDLE
-        # HOME
-        # POINT
-        # PLAYER
-        # PATROL
-        # ====================================================
-
-        self.mode = "IDLE"
-
-        # ====================================================
-        # PATROUILLE
-        # ====================================================
-
-        self.patrol_active = False
-
-        # ====================================================
-        # TASK GENERATION
-        #
-        # Chaque nouvelle commande augmente ce nombre.
-        #
-        # Exemple :
-        #
-        # task 1 = go cathedral
-        # task 2 = home
-        #
-        # La task 1 devient automatiquement invalide.
-        # ====================================================
-
-        self.task_generation = 0
-
-        # ====================================================
-        # START BOT
-        # ====================================================
-
         self.start_bot()
-
-        # ====================================================
-        # TERMINAL
-        # ====================================================
 
         threading.Thread(
             target=self.terminal_loop,
@@ -251,470 +150,186 @@ class MCBot:
 
 
     # ========================================================
-    # LOG
+    # UTILITIES
     # ========================================================
 
     def log(self, message):
-
         try:
-            username = self.bot.username
+            name = self.bot.username
         except Exception:
-            username = self.bot_name
+            name = self.bot_name
 
-        print(
-            f"[{username}] {message}"
-        )
+        print(f"[{name}] {message}")
 
-
-    # ========================================================
-    # NEW TASK
-    #
-    # Annule automatiquement la tâche précédente.
-    # ========================================================
 
     def new_task(self, mode):
-
         self.task_generation += 1
-
         self.mode = mode
-
         return self.task_generation
 
 
-    # ========================================================
-    # CHECK TASK
-    #
-    # Permet de vérifier qu'une tâche est toujours valide.
-    # ========================================================
+    def task_valid(self, generation):
+        return generation == self.task_generation
 
-    def task_is_valid(self, generation):
-
-        return (
-            generation
-            == self.task_generation
-        )
-
-
-    # ========================================================
-    # STOP CURRENT MOVEMENT
-    # ========================================================
 
     def stop_movement(self):
-
         try:
-
-            self.bot.pathfinder.setGoal(
-                None
-            )
-
+            self.bot.pathfinder.setGoal(None)
         except Exception:
             pass
 
 
-    # ========================================================
-    # CANCEL CURRENT TASK
-    # ========================================================
-
-    def cancel_current_task(self):
-
-        # Invalide toutes les anciennes tâches
+    def cancel_task(self):
         self.task_generation += 1
-
         self.patrol_active = False
-
+        self.patrol_quartier = None
+        self.patrol_current_point = None
         self.mode = "IDLE"
-
         self.stop_movement()
+
+
+    def chat(self, message):
+        try:
+            self.bot.chat(message)
+        except Exception:
+            pass
 
 
     # ========================================================
     # PATHFINDING
     # ========================================================
 
-    def pathfind_to_goal(
-        self,
-        goal_location
-    ):
-
+    def pathfind(self, position):
         try:
-
-            goal = (
-                mineflayer_pathfinder
-                .pathfinder
-                .goals
-                .GoalNear(
-                    goal_location["x"],
-                    goal_location["y"],
-                    goal_location["z"],
-                    1,
-                )
+            goal = pathfinder_lib.pathfinder.goals.GoalNear(
+                position["x"],
+                position["y"],
+                position["z"],
+                1,
             )
-
-            self.bot.pathfinder.setGoal(
-                goal
-            )
+            self.bot.pathfinder.setGoal(goal)
 
         except Exception as e:
-
             self.log(
-                chalk.red(
-                    f"Pathfinding error: "
-                    f"{e}"
-                )
+                chalk.red(f"Pathfinding error: {e}")
             )
 
 
-    # ========================================================
-    # HOME
-    # ========================================================
-
-    def go_home(self):
-
-        # ----------------------------------------------------
-        # Nouvelle tâche
-        # ----------------------------------------------------
-
-        generation = self.new_task(
-            "HOME"
-        )
-
-        # ----------------------------------------------------
-        # Arrêt patrouille
-        # ----------------------------------------------------
+    def go_to_coords(self, x, y, z, mode, message):
+        generation = self.new_task(mode)
 
         self.patrol_active = False
-
-        # ----------------------------------------------------
-        # Arrêt ancien déplacement
-        # ----------------------------------------------------
-
         self.stop_movement()
 
-        home = vec3(
-            HOME["x"],
-            HOME["y"],
-            HOME["z"],
-        )
-
-        self.log(
-            chalk.magenta(
-                f"Retour à la maison : "
-                f"{vec3_to_str(home)}"
-            )
-        )
-
-        try:
-
-            self.bot.chat(
-                "Je rentre à la maison."
-            )
-
-        except Exception:
-            pass
-
-        # ----------------------------------------------------
-        # Nouvelle destination
-        # ----------------------------------------------------
-
-        self.pathfind_to_goal(
-            home
-        )
-
-
-    # ========================================================
-    # GO TO POINT OF INTEREST
-    # ========================================================
-
-    def go_to_point(
-        self,
-        point_name
-    ):
-
-        point_name = (
-            point_name
-            .strip()
-            .lower()
-        )
-
-        if point_name not in POINTS_INTERET:
-
-            self.log(
-                chalk.red(
-                    f"Point d'intérêt inconnu : "
-                    f"{point_name}"
-                )
-            )
-
-            return False
-
-        # ----------------------------------------------------
-        # Nouvelle tâche
-        # ----------------------------------------------------
-
-        generation = self.new_task(
-            "POINT"
-        )
-
-        # ----------------------------------------------------
-        # Arrêt patrouille
-        # ----------------------------------------------------
-
-        self.patrol_active = False
-
-        # ----------------------------------------------------
-        # Arrêt déplacement précédent
-        # ----------------------------------------------------
-
-        self.stop_movement()
-
-        point = POINTS_INTERET[
-            point_name
-        ]
-
-        target = vec3(
-            point["x"],
-            point["y"],
-            point["z"],
-        )
+        target = vec3(x, y, z)
 
         self.log(
             chalk.magenta(
                 f"Déplacement vers "
-                f"{point_name} : "
                 f"{vec3_to_str(target)}"
             )
         )
 
-        try:
+        self.chat(message)
+        self.pathfind(target)
 
-            self.bot.chat(
-                f"J'arrive à "
-                f"{point_name} !"
+        return generation
+
+
+    # ========================================================
+    # DESTINATIONS
+    # ========================================================
+
+    def go_home(self):
+        return self.go_to_coords(
+            HOME["x"],
+            HOME["y"],
+            HOME["z"],
+            "HOME",
+            "Je rentre à la maison.",
+        )
+
+
+    def go_to_point(self, name):
+        name = name.strip().lower()
+
+        if name not in POINTS_INTERET:
+            self.log(
+                chalk.red(
+                    f"Point d'intérêt inconnu : {name}"
+                )
             )
+            return False
 
-        except Exception:
-            pass
+        x, y, z = POINTS_INTERET[name]
 
-        self.pathfind_to_goal(
-            target
+        self.go_to_coords(
+            x,
+            y,
+            z,
+            "POINT",
+            f"J'arrive à {name} !",
         )
 
         return True
 
 
     # ========================================================
-    # FIND PLAYER BY UUID
+    # PLAYERS
     # ========================================================
 
-    def find_player(
-        self,
-        player_uuid
-    ):
+    def find_player(self, name):
+        name = name.strip().lower()
 
         try:
+            for player_name, data in self.bot.players.items():
 
-            for player_name in self.bot.players:
-
-                player_data = (
-                    self.bot.players[
-                        player_name
-                    ]
-                )
-
-                if (
-                    player_data["uuid"]
-                    == player_uuid
-                ):
-
-                    if player_data.entity:
-
-                        return (
-                            player_data
-                            .entity
-                            .position
-                        )
+                if player_name.lower() == name:
+                    if data.entity:
+                        return player_name, data.entity
 
         except Exception as e:
-
             self.log(
                 chalk.red(
-                    f"Player search error: "
-                    f"{e}"
+                    f"Player search error: {e}"
                 )
             )
 
         return None
 
 
-    # ========================================================
-    # FIND PLAYER BY NAME
-    # ========================================================
-
-    def find_player_by_name(
-        self,
-        player_name
-    ):
-
-        player_name = (
-            player_name.strip()
-        )
-
-        if not player_name:
-            return None
-
+    def find_player_uuid(self, uuid):
         try:
-
-            # ------------------------------------------------
-            # Recherche exacte
-            # ------------------------------------------------
-
-            if (
-                player_name
-                in self.bot.players
-            ):
-
-                player_data = (
-                    self.bot.players[
-                        player_name
-                    ]
-                )
-
-                if player_data.entity:
-
-                    return (
-                        player_name,
-                        player_data.entity,
-                    )
-
-            # ------------------------------------------------
-            # Recherche sans casse
-            # ------------------------------------------------
-
-            for name in self.bot.players:
-
-                if (
-                    name.lower()
-                    == player_name.lower()
-                ):
-
-                    player_data = (
-                        self.bot.players[
-                            name
-                        ]
-                    )
-
-                    if player_data.entity:
-
-                        return (
-                            name,
-                            player_data.entity,
-                        )
-
-        except Exception as e:
-
-            self.log(
-                chalk.red(
-                    f"Player search error: "
-                    f"{e}"
-                )
-            )
-
-        return None
-
-
-    # ========================================================
-    # GO TO PLAYER
-    # ========================================================
-
-    def go_to_player(
-        self,
-        player_name
-    ):
-
-        player_name = (
-            player_name.strip()
-        )
-
-        if not player_name:
-
-            self.log(
-                chalk.red(
-                    "Nom du joueur manquant."
-                )
-            )
-
-            return False
-
-        result = (
-            self.find_player_by_name(
-                player_name
-            )
-        )
-
-        if result is None:
-
-            self.log(
-                chalk.red(
-                    f"Joueur introuvable "
-                    f"ou sans entité chargée : "
-                    f"{player_name}"
-                )
-            )
-
-            return False
-
-        real_name, player_entity = result
-
-        # ----------------------------------------------------
-        # Nouvelle tâche
-        # ----------------------------------------------------
-
-        generation = self.new_task(
-            "PLAYER"
-        )
-
-        # ----------------------------------------------------
-        # Arrêt patrouille
-        # ----------------------------------------------------
-
-        self.patrol_active = False
-
-        # ----------------------------------------------------
-        # Arrêt déplacement précédent
-        # ----------------------------------------------------
-
-        self.stop_movement()
-
-        position = (
-            player_entity.position
-        )
-
-        target = vec3(
-            position.x,
-            position.y,
-            position.z,
-        )
-
-        self.log(
-            chalk.magenta(
-                f"Déplacement vers "
-                f"{real_name} : "
-                f"{vec3_to_str(target)}"
-            )
-        )
-
-        try:
-
-            self.bot.chat(
-                f"J'arrive vers "
-                f"{real_name} !"
-            )
+            for name, data in self.bot.players.items():
+                if data.uuid == uuid and data.entity:
+                    return data.entity
 
         except Exception:
             pass
 
-        self.pathfind_to_goal(
-            target
+        return None
+
+
+    def go_to_player(self, name):
+        result = self.find_player(name)
+
+        if not result:
+            self.log(
+                chalk.red(
+                    f"Joueur introuvable ou sans entité chargée : {name}"
+                )
+            )
+            return False
+
+        real_name, entity = result
+        pos = entity.position
+
+        self.go_to_coords(
+            pos.x,
+            pos.y,
+            pos.z,
+            "PLAYER",
+            f"J'arrive vers {real_name} !",
         )
 
         return True
@@ -723,291 +338,461 @@ class MCBot:
     # ========================================================
     # GO INTELLIGENT
     #
-    # go <destination>
+    # go home
+    # go cathedral
+    # go nThArOs
     #
-    # 1. Cherche un lieu
-    # 2. Sinon cherche un joueur
-    # 3. Sinon erreur
+    # HOME → lieu → joueur
     # ========================================================
 
-    def go_to_destination(
-        self,
-        destination
-    ):
-
-        destination = (
-            destination.strip()
-        )
+    def go_to_destination(self, destination):
+        destination = destination.strip()
 
         if not destination:
-
             self.log(
                 chalk.yellow(
                     "Destination manquante."
                 )
             )
-
             return
 
-        destination_lower = (
-            destination.lower()
-        )
+        lower = destination.lower()
 
-        # ----------------------------------------------------
+        # HOME reste indépendant
+        if lower in ("home", "maison"):
+            self.go_home()
+            return
+
         # LIEU
-        # ----------------------------------------------------
-
-        if (
-            destination_lower
-            in POINTS_INTERET
-        ):
-
-            self.go_to_point(
-                destination_lower
-            )
-
+        if lower in POINTS_INTERET:
+            self.go_to_point(lower)
             return
 
-        # ----------------------------------------------------
         # JOUEUR
-        # ----------------------------------------------------
-
-        player_result = (
-            self.find_player_by_name(
-                destination
-            )
-        )
-
-        if player_result is not None:
-
-            self.go_to_player(
-                destination
-            )
-
+        if self.go_to_player(destination):
             return
-
-        # ----------------------------------------------------
-        # INCONNU
-        # ----------------------------------------------------
 
         self.log(
             chalk.red(
-                f"Destination introuvable : "
-                f"{destination}"
-            )
-        )
-
-        print(
-            chalk.gray(
-                "La destination doit être "
-                "un lieu ou un joueur visible."
+                f"Destination introuvable : {destination}"
             )
         )
 
 
     # ========================================================
-    # RANDOM PATROL POSITION
+    # PATROL
     # ========================================================
 
-    def get_random_patrol_position(
-        self
-    ):
-
-        x = (
-            HOME["x"]
-            + random.randint(
-                -PATROL_RADIUS,
-                PATROL_RADIUS,
-            )
-        )
-
-        z = (
-            HOME["z"]
-            + random.randint(
-                -PATROL_RADIUS,
-                PATROL_RADIUS,
-            )
-        )
-
+    def random_patrol_position(self):
         return vec3(
-            x,
+            HOME["x"] + random.randint(
+                -PATROL_RADIUS,
+                PATROL_RADIUS,
+            ),
             HOME["y"],
-            z,
+            HOME["z"] + random.randint(
+                -PATROL_RADIUS,
+                PATROL_RADIUS,
+            ),
         )
 
-
-    # ========================================================
-    # START PATROL
-    # ========================================================
 
     def start_patrol(self):
-
         if self.patrol_active:
-
-            try:
-
-                self.bot.chat(
-                    "Je patrouille déjà."
-                )
-
-            except Exception:
-                pass
-
+            self.chat("Je patrouille déjà.")
             return
 
-        # ----------------------------------------------------
-        # Nouvelle tâche
-        # ----------------------------------------------------
-
         self.task_generation += 1
+        generation = self.task_generation
 
         self.mode = "PATROL"
-
         self.patrol_active = True
-
-        generation = (
-            self.task_generation
-        )
-
-        # ----------------------------------------------------
-        # Arrêt ancien déplacement
-        # ----------------------------------------------------
-
         self.stop_movement()
 
-        try:
-
-            self.bot.chat(
-                f"Je commence ma patrouille "
-                f"dans un rayon de "
-                f"{PATROL_RADIUS} blocs."
-            )
-
-        except Exception:
-            pass
-
-        self.log(
-            chalk.cyan(
-                f"Patrouille activée - "
-                f"rayon {PATROL_RADIUS}"
-            )
+        self.chat(
+            f"Je commence ma patrouille "
+            f"dans un rayon de {PATROL_RADIUS} blocs."
         )
 
-        self.run_patrol_step(
-            generation
-        )
+        self.run_patrol_step(generation)
 
 
-    # ========================================================
-    # PATROL STEP
-    # ========================================================
-
-    def run_patrol_step(
-        self,
-        generation=None
-    ):
-
+    def run_patrol_step(self, generation=None):
         if not self.patrol_active:
             return
 
-        # ----------------------------------------------------
-        # Si génération fournie, vérifier qu'elle est encore
-        # valide.
-        # ----------------------------------------------------
+        if (
+            generation is not None
+            and not self.task_valid(generation)
+        ):
+            return
 
-        if generation is not None:
-
-            if not self.task_is_valid(
-                generation
-            ):
-
-                return
-
-        target = (
-            self.get_random_patrol_position()
-        )
+        target = self.random_patrol_position()
 
         self.log(
             chalk.magenta(
-                f"Nouvelle destination "
-                f"de patrouille : "
-                f"{vec3_to_str(target)}"
+                f"Patrouille → {vec3_to_str(target)}"
             )
         )
 
-        self.pathfind_to_goal(
-            target
-        )
+        self.pathfind(target)
 
 
     # ========================================================
-    # LIST PLAYERS
+    # PATROL PAR QUARTIER
+    #
+    # Se déplace de point en point à l'intérieur d'un quartier
+    # en suivant GRAPH. mineflayer-pathfinder calcule le vrai
+    # chemin, GRAPH sert seulement à choisir le prochain point.
+    # ========================================================
+
+    def find_quartier(self, name):
+        name = name.strip().lower()
+
+        for quartier_name in QUARTIERS:
+            if quartier_name.lower() == name:
+                return quartier_name
+
+        return None
+
+
+    def quartier_points_valides(self, quartier_name):
+        return [
+            point
+            for point in QUARTIERS.get(quartier_name, [])
+            if point in POINTS_INTERET
+        ]
+
+
+    def next_quartier_point(self, quartier_name, current_point):
+        valid_points = self.quartier_points_valides(quartier_name)
+
+        neighbors = GRAPH.get(current_point, [])
+
+        candidates = [
+            point
+            for point in neighbors
+            if point in valid_points
+        ]
+
+        if not candidates:
+            candidates = [
+                point
+                for point in valid_points
+                if point != current_point
+            ]
+
+        if not candidates:
+            return None
+
+        return random.choice(candidates)
+
+
+    def start_quartier_patrol(self, quartier_name):
+        if self.patrol_active:
+            self.chat("Je patrouille déjà.")
+            return False
+
+        matched = self.find_quartier(quartier_name)
+
+        if not matched:
+            self.log(
+                chalk.red(
+                    f"Quartier inconnu : {quartier_name}"
+                )
+            )
+            self.chat("Je ne connais pas ce quartier.")
+            return False
+
+        valid_points = self.quartier_points_valides(matched)
+
+        if not valid_points:
+            self.log(
+                chalk.red(
+                    f"Aucun point connu dans le quartier : {matched}"
+                )
+            )
+            self.chat("Ce quartier n'a aucun point que je connais.")
+            return False
+
+        self.task_generation += 1
+        generation = self.task_generation
+
+        self.mode = "PATROL_QUARTIER"
+        self.patrol_active = True
+        self.patrol_quartier = matched
+        self.patrol_current_point = valid_points[0]
+        self.stop_movement()
+
+        self.chat(
+            f"Je patrouille dans {matched}."
+        )
+
+        self.log(
+            chalk.cyan(
+                f"Patrouille de quartier activée : {matched}"
+            )
+        )
+
+        self.run_quartier_patrol_step(generation)
+
+        return True
+
+
+    def run_quartier_patrol_step(self, generation=None):
+        if not self.patrol_active:
+            return
+
+        if not self.patrol_quartier:
+            return
+
+        if (
+            generation is not None
+            and not self.task_valid(generation)
+        ):
+            return
+
+        next_point = self.next_quartier_point(
+            self.patrol_quartier,
+            self.patrol_current_point,
+        )
+
+        if not next_point:
+            self.log(
+                chalk.red(
+                    f"Plus aucun point à visiter dans "
+                    f"{self.patrol_quartier}."
+                )
+            )
+            self.cancel_task()
+            return
+
+        self.patrol_current_point = next_point
+
+        x, y, z = POINTS_INTERET[next_point]
+        target = vec3(x, y, z)
+
+        self.log(
+            chalk.magenta(
+                f"Patrouille [{self.patrol_quartier}] → "
+                f"{next_point} : {vec3_to_str(target)}"
+            )
+        )
+
+        self.pathfind(target)
+
+
+    # ========================================================
+    # PLAYERS LIST
     # ========================================================
 
     def list_players(self):
+        print()
 
-        try:
-
-            players = list(
-                self.bot.players.keys()
-            )
-
-            if not players:
-
+        for name, data in self.bot.players.items():
+            if data.entity:
                 print(
-                    chalk.yellow(
-                        "Aucun joueur visible."
-                    )
+                    f"  - {name} "
+                    f"{vec3_to_str(data.entity.position)}"
+                )
+            else:
+                print(
+                    f"  - {name} (position inconnue)"
                 )
 
-                return
+        print()
+
+
+    # ========================================================
+    # COMMAND HANDLER
+    #
+    # Utilisé par le TERMINAL et le CHAT.
+    # ========================================================
+
+    def handle_command(self, command, sender=None):
+        command = command.strip()
+
+        if not command:
+            return True
+
+        lower = command.lower()
+
+        # ----------------------------------------------------
+        # QUIT
+        # ----------------------------------------------------
+
+        if lower == "quit":
+            self.reconnect = False
+            self.cancel_task()
+            self.chat(eliza_bot.final())
+
+            try:
+                self.bot.quit()
+            except Exception:
+                pass
+
+            return False
+
+        # ----------------------------------------------------
+        # STOP
+        # ----------------------------------------------------
+
+        if lower == "stop":
+            self.cancel_task()
+            self.chat("D'accord, j'arrête.")
+            self.log(
+                chalk.yellow("✓ Tâche arrêtée.")
+            )
+            return True
+
+        # ----------------------------------------------------
+        # PATROL
+        # ----------------------------------------------------
+
+        if lower in (
+            "patrouille",
+            "patrol",
+            "patrouiller",
+        ):
+            self.start_patrol()
+            return True
+
+        # ----------------------------------------------------
+        # PATROL PAR QUARTIER
+        # ----------------------------------------------------
+
+        if lower.startswith("patrouille "):
+            self.start_quartier_patrol(
+                command[len("patrouille "):].strip()
+            )
+            return True
+
+        if lower.startswith("patrol "):
+            self.start_quartier_patrol(
+                command[len("patrol "):].strip()
+            )
+            return True
+
+        # ----------------------------------------------------
+        # QUARTIERS
+        # ----------------------------------------------------
+
+        if lower in ("quartiers", "quartier"):
+            print()
+            print(chalk.cyan("Quartiers disponibles :"))
+
+            for quartier_name in QUARTIERS:
+                print(f"  - {quartier_name}")
 
             print()
+            return True
+
+        # ----------------------------------------------------
+        # HOME
+        #
+        # home = alias de go home
+        # ----------------------------------------------------
+
+        if lower in ("home", "maison"):
+            self.go_to_destination("home")
+            return True
+
+        # ----------------------------------------------------
+        # PLAYERS
+        # ----------------------------------------------------
+
+        if lower in ("players", "joueurs"):
+            self.list_players()
+            return True
+
+        # ----------------------------------------------------
+        # SAY
+        # ----------------------------------------------------
+
+        if lower.startswith("say "):
+            message = command[4:].strip()
+            self.chat(message)
+            self.log(
+                chalk.cyan(f"Chat: {message}")
+            )
+            return True
+
+        # ----------------------------------------------------
+        # GO
+        # ----------------------------------------------------
+
+        if lower == "go":
+            self.chat("Où veux-tu que j'aille ?")
+
+            print()
+            print(chalk.cyan("Destinations disponibles :"))
+            print("  - home")
+
+            for point_name in sorted(POINTS_INTERET):
+                print(f"  - {point_name}")
 
             print(
-                chalk.cyan(
-                    "Joueurs visibles :"
+                chalk.gray(
+                    "Tape 'players' pour voir les joueurs visibles."
                 )
             )
-
-            for player_name in players:
-
-                player_data = (
-                    self.bot.players[
-                        player_name
-                    ]
-                )
-
-                if player_data.entity:
-
-                    position = (
-                        player_data
-                        .entity
-                        .position
-                    )
-
-                    print(
-                        f"  - {player_name} "
-                        f"{vec3_to_str(position)}"
-                    )
-
-                else:
-
-                    print(
-                        f"  - {player_name} "
-                        f"(position inconnue)"
-                    )
-
             print()
 
-        except Exception as e:
+            return True
 
+        if lower.startswith("go "):
+            self.go_to_destination(
+                command[3:].strip()
+            )
+            return True
+
+        # ----------------------------------------------------
+        # COMMANDES FRANÇAISES
+        # ----------------------------------------------------
+
+        prefixes = (
+            "va à ",
+            "va a ",
+            "va au ",
+            "va aux ",
+            "va à la ",
+            "va a la ",
+            "va à l'",
+            "va a l'",
+            "aller à ",
+            "aller a ",
+        )
+
+        for prefix in prefixes:
+            if lower.startswith(prefix):
+                self.go_to_destination(
+                    command[len(prefix):].strip()
+                )
+                return True
+
+        # ----------------------------------------------------
+        # ELIZA
+        # ----------------------------------------------------
+
+        try:
+            response = eliza_bot.respond(command)
+
+            if response:
+                self.chat(response)
+                self.log(
+                    chalk.cyan(
+                        f"ELIZA: {response}"
+                    )
+                )
+
+        except Exception as e:
             self.log(
                 chalk.red(
-                    f"Erreur joueurs : "
-                    f"{e}"
+                    f"ELIZA error: {e}"
                 )
             )
+
+        return True
 
 
     # ========================================================
@@ -1015,434 +800,83 @@ class MCBot:
     # ========================================================
 
     def terminal_loop(self):
-
         time.sleep(1)
 
-        print()
-
         print(
             chalk.green(
-                "=========================================="
-            )
-        )
-
-        print(
-            chalk.green(
-                "        CONSOLE DU BOT MINECRAFT"
-            )
-        )
-
-        print(
-            chalk.green(
-                "=========================================="
+                "\n========== CONSOLE BOT =========="
             )
         )
 
         print(
             chalk.gray(
-                "Tape 'help' pour voir les commandes."
+                "help | go <destination> | home | "
+                "players | patrouille | stop | say | quit"
             )
         )
 
-        print()
-
         while True:
-
             try:
+                command = input("> ").strip()
 
-                command = input(
-                    "> "
-                ).strip()
-
-                if not command:
+                if command.lower() == "help":
+                    print(
+                        "\n"
+                        "  go <destination>      → lieu ou joueur\n"
+                        "  go home               → maison\n"
+                        "  home                  → maison\n"
+                        "  players               → joueurs visibles\n"
+                        "  patrouille            → lancer patrouille\n"
+                        "  patrouille <quartier> → patrouiller un quartier\n"
+                        "  quartiers             → lister les quartiers\n"
+                        "  stop                  → arrêter la tâche\n"
+                        "  say <message>         → parler\n"
+                        "  quit                  → quitter\n"
+                    )
                     continue
 
-                command_lower = (
-                    command.lower()
-                )
-
-
-                # ====================================================
-                # HELP
-                # ====================================================
-
-                if command_lower in [
-                    "help",
-                    "?",
-                ]:
-
-                    print()
-
-                    print(
-                        chalk.cyan(
-                            "Commandes disponibles :"
-                        )
-                    )
-
-                    print(
-                        "  help"
-                        "               → afficher l'aide"
-                    )
-
-                    print(
-                        "  players"
-                        "            → afficher les joueurs"
-                    )
-
-                    print(
-                        "  patrouille"
-                        "         → commencer une patrouille"
-                    )
-
-                    print(
-                        "  stop"
-                        "               → arrêter le déplacement"
-                    )
-
-                    print(
-                        "  home"
-                        "               → rentrer à la maison"
-                    )
-
-                    print(
-                        "  go <destination>"
-                        "   → aller vers un lieu ou joueur"
-                    )
-
-                    print(
-                        "  say <message>"
-                        "      → parler dans le chat"
-                    )
-
-                    print(
-                        "  quit"
-                        "               → quitter le bot"
-                    )
-
-                    print()
-
-                    print(
-                        chalk.cyan(
-                            "Exemples :"
-                        )
-                    )
-
-                    print(
-                        "  go cathedral"
-                    )
-
-                    print(
-                        "  go cathedrale"
-                    )
-
-                    print(
-                        "  go george orwell"
-                    )
-
-                    print(
-                        "  go nThArOs"
-                    )
-
-                    print(
-                        "  home"
-                    )
-
-                    print(
-                        "  patrouille"
-                    )
-
-                    print()
-
-                    continue
-
-
-                # ====================================================
-                # QUIT
-                # ====================================================
-
-                if command_lower == "quit":
-
-                    self.log(
-                        chalk.yellow(
-                            "Arrêt du bot..."
-                        )
-                    )
-
-                    self.reconnect = False
-
-                    self.cancel_current_task()
-
-                    try:
-
-                        self.bot.chat(
-                            eliza_bot.final()
-                        )
-
-                    except Exception:
-                        pass
-
-                    try:
-
-                        self.bot.quit()
-
-                    except Exception:
-                        pass
-
+                if not self.handle_command(command):
                     break
 
-
-                # ====================================================
-                # STOP
-                # ====================================================
-
-                if command_lower == "stop":
-
-                    self.cancel_current_task()
-
-                    self.log(
-                        chalk.yellow(
-                            "✓ Tâche arrêtée."
-                        )
-                    )
-
-                    continue
-
-
-                # ====================================================
-                # PATROUILLE
-                # ====================================================
-
-                if command_lower == "patrouille":
-
-                    self.start_patrol()
-
-                    continue
-
-
-                # ====================================================
-                # HOME
-                # ====================================================
-
-                if command_lower == "home":
-
-                    self.go_home()
-
-                    continue
-
-
-                # ====================================================
-                # PLAYERS
-                # ====================================================
-
-                if command_lower == "players":
-
-                    self.list_players()
-
-                    continue
-
-
-                # ====================================================
-                # SAY
-                # ====================================================
-
-                if command_lower.startswith(
-                    "say "
-                ):
-
-                    message = (
-                        command[
-                            len("say "):
-                        ].strip()
-                    )
-
-                    if not message:
-
-                        self.log(
-                            chalk.yellow(
-                                "Message vide."
-                            )
-                        )
-
-                        continue
-
-                    try:
-
-                        self.bot.chat(
-                            message
-                        )
-
-                        self.log(
-                            chalk.cyan(
-                                f"Chat : "
-                                f"{message}"
-                            )
-                        )
-
-                    except Exception as e:
-
-                        self.log(
-                            chalk.red(
-                                f"Erreur chat : "
-                                f"{e}"
-                            )
-                        )
-
-                    continue
-
-
-                # ====================================================
-                # GO
-                #
-                # Une seule syntaxe :
-                #
-                # go <destination>
-                #
-                # ====================================================
-
-                if command_lower == "go":
-
-                    self.log(
-                        chalk.yellow(
-                            "Destination manquante."
-                        )
-                    )
-
-                    print(
-                        "Exemples :"
-                    )
-
-                    print(
-                        "  go cathedral"
-                    )
-
-                    print(
-                        "  go nThArOs"
-                    )
-
-                    continue
-
-
-                if command_lower.startswith(
-                    "go "
-                ):
-
-                    destination = (
-                        command[
-                            len("go "):
-                        ].strip()
-                    )
-
-                    self.go_to_destination(
-                        destination
-                    )
-
-                    continue
-
-
-                # ====================================================
-                # UNKNOWN COMMAND
-                # ====================================================
-
-                self.log(
-                    chalk.red(
-                        f"Commande inconnue : "
-                        f"{command}"
-                    )
-                )
-
-                print(
-                    chalk.gray(
-                        "Tape 'help' pour voir "
-                        "les commandes."
-                    )
-                )
-
-
-            except EOFError:
-
-                self.log(
-                    chalk.yellow(
-                        "EOF détecté. "
-                        "Arrêt du bot."
-                    )
-                )
-
-                self.reconnect = False
-
-                self.cancel_current_task()
-
-                try:
-
-                    self.bot.quit()
-
-                except Exception:
-                    pass
-
-                break
-
-
-            except KeyboardInterrupt:
-
+            except (EOFError, KeyboardInterrupt):
                 print()
-
-                self.log(
-                    chalk.yellow(
-                        "Ctrl+C détecté. "
-                        "Arrêt du bot."
-                    )
-                )
-
                 self.reconnect = False
-
-                self.cancel_current_task()
+                self.cancel_task()
 
                 try:
-
                     self.bot.quit()
-
                 except Exception:
                     pass
 
                 break
-
 
             except Exception as e:
-
                 self.log(
                     chalk.red(
-                        f"Erreur terminal : "
-                        f"{e}"
+                        f"Terminal error: {e}"
                     )
                 )
 
 
     # ========================================================
-    # START BOT
+    # MINEFLAYER
     # ========================================================
 
     def start_bot(self):
-
-        self.bot = (
-            mineflayer.createBot(
-                self.bot_args
-            )
+        self.bot = mineflayer.createBot(
+            self.bot_args
         )
 
-        # ----------------------------------------------------
-        # Pathfinder
-        # ----------------------------------------------------
+        # La patrouille/pathfinding change de goal en continu,
+        # ce qui ajoute des listeners internes à chaque appel.
+        # Ce n'est pas une vraie fuite, on lève juste la limite.
+        self.bot.setMaxListeners(0)
 
         self.bot.loadPlugin(
-            mineflayer_pathfinder.pathfinder
+            pathfinder_lib.pathfinder
         )
 
-        # ----------------------------------------------------
-        # Auto Eat
-        # ----------------------------------------------------
-
-        self.bot.loadPlugin(
-            mineflayer_auto_eat
-        )
+        self.bot.loadPlugin(auto_eat)
 
         self.bot.autoEat.options = {
             "priority": "foodPoints",
@@ -1459,167 +893,92 @@ class MCBot:
 
     def start_events(self):
 
-
-        # ====================================================
-        # LOGIN
-        # ====================================================
-
-        @On(
-            self.bot,
-            "login"
-        )
+        @On(self.bot, "login")
         def login():
-
             try:
-
-                self.bot_socket = (
-                    self.bot._client.socket
-                )
-
+                socket = self.bot._client.socket
                 server = (
-                    self.bot_socket.server
-                    if self.bot_socket.server
-                    else self.bot_socket._host
+                    socket.server
+                    if socket.server
+                    else socket._host
                 )
 
                 self.log(
                     chalk.green(
-                        f"Logged in to "
-                        f"{server}"
+                        f"Logged in to {server}"
                     )
                 )
 
             except Exception as e:
-
                 self.log(
                     chalk.red(
-                        f"Login error: "
-                        f"{e}"
+                        f"Login error: {e}"
                     )
                 )
 
 
-        # ====================================================
-        # SPAWN
-        # ====================================================
-
-        @On(
-            self.bot,
-            "spawn"
-        )
+        @On(self.bot, "spawn")
         def spawn():
-
             try:
-
-                message = (
-                    eliza_bot.initial()
-                )
-
-                self.bot.chat(
-                    message
-                )
+                message = eliza_bot.initial()
+                self.chat(message)
 
                 self.log(
                     chalk.green(
-                        f"ELIZA: "
-                        f"{message}"
+                        f"ELIZA: {message}"
                     )
                 )
 
             except Exception as e:
-
                 self.log(
                     chalk.red(
-                        f"ELIZA error: "
-                        f"{e}"
+                        f"Spawn error: {e}"
                     )
                 )
 
 
-        # ====================================================
-        # KICKED
-        # ====================================================
-
-        @On(
-            self.bot,
-            "kicked"
-        )
-        def kicked(
-            reason,
-            loggedIn
-        ):
-
+        @On(self.bot, "kicked")
+        def kicked(reason, loggedIn):
             if loggedIn:
-
                 self.log(
                     chalk.redBright(
-                        f"Kicked whilst "
-                        f"trying to connect: "
-                        f"{reason}"
+                        f"Kicked: {reason}"
                     )
                 )
 
 
-        # ====================================================
-        # GOAL REACHED
-        # ====================================================
+        @On(self.bot, "goal_reached")
+        def goal_reached(_this, _goal):
 
-        @On(
-            self.bot,
-            "goal_reached"
-        )
-        def goal_reached(
-            _this,
-            _goal
-        ):
-
-            # =================================================
+            # ------------------------------------------------
             # PATROUILLE
-            # =================================================
+            # ------------------------------------------------
 
             if self.patrol_active:
 
-                current_generation = (
-                    self.task_generation
-                )
+                generation = self.task_generation
 
                 self.log(
                     chalk.green(
-                        "Destination de patrouille "
-                        "atteinte."
-                    )
-                )
-
-                self.log(
-                    chalk.gray(
-                        f"Pause de "
-                        f"{PATROL_WAIT_SECONDS} "
-                        f"secondes..."
+                        "✓ Point de patrouille atteint."
                     )
                 )
 
                 def continue_patrol():
+                    time.sleep(PATROL_WAIT)
 
-                    time.sleep(
-                        PATROL_WAIT_SECONDS
-                    )
-
-                    # ------------------------------------------------
-                    # Vérifie que personne n'a donné une nouvelle
-                    # commande pendant la pause.
-                    # ------------------------------------------------
-
-                    if not self.patrol_active:
-                        return
-
-                    if not self.task_is_valid(
-                        current_generation
+                    if (
+                        self.patrol_active
+                        and self.task_valid(generation)
                     ):
-                        return
-
-                    self.run_patrol_step(
-                        current_generation
-                    )
+                        if self.mode == "PATROL_QUARTIER":
+                            self.run_quartier_patrol_step(
+                                generation
+                            )
+                        else:
+                            self.run_patrol_step(
+                                generation
+                            )
 
                 threading.Thread(
                     target=continue_patrol,
@@ -1628,96 +987,45 @@ class MCBot:
 
                 return
 
+            # ------------------------------------------------
+            # TÂCHE NORMALE
+            # ------------------------------------------------
 
-            # =================================================
-            # HOME
-            # =================================================
+            messages = {
+                "HOME": (
+                    "✓ Tâche terminée : "
+                    "je suis arrivé à la maison.",
+                    "Je suis arrivé à la maison.",
+                ),
 
-            if self.mode == "HOME":
+                "POINT": (
+                    "✓ Tâche terminée : "
+                    "je suis arrivé à destination.",
+                    "Je suis arrivé à destination.",
+                ),
+
+                "PLAYER": (
+                    "✓ Tâche terminée : "
+                    "je suis arrivé auprès du joueur.",
+                    "Je suis arrivé !",
+                ),
+            }
+
+            result = messages.get(self.mode)
+
+            if result:
+                log_message, chat_message = result
 
                 self.log(
-                    chalk.green(
-                        "✓ Tâche terminée : "
-                        "je suis arrivé à la maison."
-                    )
+                    chalk.green(log_message)
                 )
 
-                try:
-
-                    self.bot.chat(
-                        "Je suis arrivé à la maison."
-                    )
-
-                except Exception:
-                    pass
+                self.chat(chat_message)
 
                 self.mode = "IDLE"
 
-                return
 
-
-            # =================================================
-            # POINT
-            # =================================================
-
-            if self.mode == "POINT":
-
-                self.log(
-                    chalk.green(
-                        "✓ Tâche terminée : "
-                        "je suis arrivé à destination."
-                    )
-                )
-
-                try:
-
-                    self.bot.chat(
-                        "Je suis arrivé à destination."
-                    )
-
-                except Exception:
-                    pass
-
-                self.mode = "IDLE"
-
-                return
-
-
-            # =================================================
-            # PLAYER
-            # =================================================
-
-            if self.mode == "PLAYER":
-
-                self.log(
-                    chalk.green(
-                        "✓ Tâche terminée : "
-                        "je suis arrivé auprès du joueur."
-                    )
-                )
-
-                try:
-
-                    self.bot.chat(
-                        "Je suis arrivé !"
-                    )
-
-                except Exception:
-                    pass
-
-                self.mode = "IDLE"
-
-                return
-
-
-        # ====================================================
-        # CHAT
-        # ====================================================
-
-        @On(
-            self.bot,
-            "messagestr"
-        )
+        @On(self.bot, "messagestr")
         def messagestr(
             message,
             messagePosition,
@@ -1726,438 +1034,95 @@ class MCBot:
             verified=None,
         ):
 
-            # ------------------------------------------------
-            # Seulement chat normal
-            # ------------------------------------------------
-
             if messagePosition != "chat":
                 return
 
-            # ------------------------------------------------
-            # Ignorer ses propres messages
-            # ------------------------------------------------
+            if (
+                self.bot.player
+                and sender == self.bot.player.uuid
+            ):
+                return
 
-            if self.bot.player:
+            text = message.strip()
 
-                if (
-                    sender
-                    == self.bot.player.uuid
-                ):
+            # Retire <joueur>
+            if text.startswith("<"):
+                end = text.find(">")
 
-                    return
-
-            # ------------------------------------------------
-            # Message reçu
-            # ------------------------------------------------
-
-            original_message = (
-                message.strip()
-            )
+                if end != -1:
+                    text = text[end + 1:].strip()
 
             self.log(
                 chalk.yellow(
-                    f"Message received: "
-                    f"{original_message}"
+                    f"Chat: {text}"
                 )
             )
 
             # ------------------------------------------------
-            # Retirer <joueur>
-            # ------------------------------------------------
-
-            message_no_tag = (
-                original_message
-            )
-
-            if message_no_tag.startswith(
-                "<"
-            ):
-
-                end_tag = (
-                    message_no_tag.find(
-                        ">"
-                    )
-                )
-
-                if end_tag != -1:
-
-                    message_no_tag = (
-                        message_no_tag[
-                            end_tag + 1:
-                        ].strip()
-                    )
-
-            message_lower = (
-                message_no_tag.lower()
-            )
-
-            self.log(
-                chalk.gray(
-                    f"Message analysé: "
-                    f"{message_no_tag}"
-                )
-            )
-
-
-            # =================================================
-            # QUIT
-            # =================================================
-
-            if message_lower == "quit":
-
-                try:
-
-                    self.bot.chat(
-                        eliza_bot.final()
-                    )
-
-                    self.reconnect = False
-
-                    self.cancel_current_task()
-
-                    self.bot.quit()
-
-                except Exception as e:
-
-                    self.log(
-                        chalk.red(
-                            f"Quit error: "
-                            f"{e}"
-                        )
-                    )
-
-                return
-
-
-            # =================================================
             # COME TO ME
-            # =================================================
+            # ------------------------------------------------
 
-            if message_lower in [
-                "come to me",
+            if text.lower() in (
                 "viens",
-                "viens me voir",
                 "viens ici",
+                "viens me voir",
                 "rejoins moi",
                 "rejoins-moi",
-            ]:
-
-                # ------------------------------------------------
-                # Nouvelle tâche
-                # ------------------------------------------------
-
-                self.new_task(
-                    "PLAYER"
-                )
-
-                self.patrol_active = False
-
-                self.stop_movement()
-
-                player_location = (
-                    self.find_player(
-                        sender
-                    )
-                )
-
-                if player_location:
-
-                    target = vec3(
-                        player_location["x"],
-                        player_location["y"] + 1,
-                        player_location["z"],
-                    )
-
-                    self.log(
-                        chalk.magenta(
-                            f"Pathfinding to "
-                            f"{vec3_to_str(target)}"
-                        )
-                    )
-
-                    try:
-
-                        self.bot.chat(
-                            "J'arrive !"
-                        )
-
-                    except Exception:
-                        pass
-
-                    self.pathfind_to_goal(
-                        target
-                    )
-
-                else:
-
-                    try:
-
-                        self.bot.chat(
-                            "Je ne trouve pas "
-                            "ce joueur."
-                        )
-
-                    except Exception:
-                        pass
-
-                return
-
-
-            # =================================================
-            # STOP
-            # =================================================
-
-            if message_lower == "stop":
-
-                self.cancel_current_task()
-
-                try:
-
-                    self.bot.chat(
-                        "D'accord, j'arrête."
-                    )
-
-                except Exception:
-                    pass
-
-                return
-
-
-            # =================================================
-            # PATROUILLE
-            # =================================================
-
-            if message_lower in [
-                "patrouille",
-                "patrol",
-                "patrouiller",
-                "fais une patrouille",
-                "commence la patrouille",
-            ]:
-
-                self.start_patrol()
-
-                return
-
-
-            # =================================================
-            # HOME
-            # =================================================
-
-            if message_lower in [
-                "home",
-                "maison",
-                "rentre",
-                "rentre à la maison",
-                "rentre a la maison",
-                "retourne à la maison",
-                "retourne a la maison",
-            ]:
-
-                self.go_home()
-
-                return
-
-
-            # =================================================
-            # GO
-            # =================================================
-
-            if message_lower == "go":
-
-                try:
-
-                    self.bot.chat(
-                        "Où veux-tu que j'aille ?"
-                    )
-
-                except Exception:
-                    pass
-
-                return
-
-
-            if message_lower.startswith(
-                "go "
+                "come to me",
             ):
 
-                destination = (
-                    message_no_tag[
-                        len("go "):
-                    ].strip()
-                )
+                entity = self.find_player_uuid(sender)
 
-                self.go_to_destination(
-                    destination
-                )
-
-                return
-
-
-            # =================================================
-            # POINT D'INTERET DIRECT
-            # =================================================
-
-            if (
-                message_lower
-                in POINTS_INTERET
-            ):
-
-                self.go_to_point(
-                    message_lower
-                )
-
-                return
-
-
-            # =================================================
-            # PREFIXES FRANCAIS
-            # =================================================
-
-            prefixes = [
-                "va à ",
-                "va a ",
-                "va au ",
-                "va aux ",
-                "va à la ",
-                "va a la ",
-                "va à l'",
-                "va a l'",
-                "aller à ",
-                "aller a ",
-            ]
-
-            for prefix in prefixes:
-
-                if message_lower.startswith(
-                    prefix
-                ):
-
-                    destination = (
-                        message_no_tag[
-                            len(prefix):
-                        ].strip()
+                if not entity:
+                    self.chat(
+                        "Je ne trouve pas ce joueur."
                     )
-
-                    self.go_to_destination(
-                        destination
-                    )
-
                     return
 
+                pos = entity.position
 
-            # =================================================
-            # ELIZA
-            # =================================================
-
-            try:
-
-                response = (
-                    eliza_bot.respond(
-                        message_no_tag
-                    )
+                self.go_to_coords(
+                    pos.x,
+                    pos.y + 1,
+                    pos.z,
+                    "PLAYER",
+                    "J'arrive !",
                 )
 
-                if response:
+                return
 
-                    self.bot.chat(
-                        response
-                    )
+            # ------------------------------------------------
+            # COMMANDES
+            # ------------------------------------------------
 
-                    self.log(
-                        chalk.cyan(
-                            f"ELIZA: "
-                            f"{response}"
-                        )
-                    )
-
-                else:
-
-                    self.bot.chat(
-                        "Je ne sais pas "
-                        "quoi répondre."
-                    )
-
-            except Exception as e:
-
-                self.log(
-                    chalk.red(
-                        f"ELIZA response error: "
-                        f"{e}"
-                    )
-                )
+            self.handle_command(
+                text,
+                sender,
+            )
 
 
-        # ====================================================
-        # END
-        # ====================================================
-
-        @On(
-            self.bot,
-            "end"
-        )
+        @On(self.bot, "end")
         def end(reason):
 
             self.log(
                 chalk.red(
-                    f"Disconnected: "
-                    f"{reason}"
+                    f"Disconnected: {reason}"
                 )
             )
 
-            # ------------------------------------------------
-            # Remove old listeners
-            # ------------------------------------------------
-
-            off(
-                self.bot,
-                "login",
-                login,
-            )
-
-            off(
-                self.bot,
-                "spawn",
-                spawn,
-            )
-
-            off(
-                self.bot,
-                "kicked",
-                kicked,
-            )
-
-            off(
-                self.bot,
-                "messagestr",
-                messagestr,
-            )
-
-            # ------------------------------------------------
-            # Reconnect
-            # ------------------------------------------------
-
             if self.reconnect:
-
                 self.log(
                     chalk.cyanBright(
-                        "Attempting to reconnect..."
+                        "Reconnexion..."
                     )
                 )
 
+                time.sleep(2)
                 self.start_bot()
 
-            off(
-                self.bot,
-                "end",
-                end,
-            )
-
 
 # ============================================================
-# START BOT
+# START
 # ============================================================
 
-bot = MCBot(
-    "pathfinder-bot"
-)
+bot = MCBot(BOT_NAME)
