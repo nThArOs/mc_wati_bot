@@ -4,7 +4,6 @@ from eliza import eliza
 from utils.vec3_conversion import vec3_to_str
 import os
 import time
-import random
 import threading
 
 
@@ -34,7 +33,6 @@ HOME = {
     "z": -1328,
 }
 
-PATROL_RADIUS = 16
 PATROL_WAIT = 5
 
 POINTS_INTERET = {
@@ -128,8 +126,9 @@ class MCBot:
         self.reconnect = RECONNECT
         self.mode = "IDLE"
         self.patrol_active = False
-        self.patrol_quartier = None
-        self.patrol_current_point = None
+        self.patrol_route = []
+        self.patrol_index = 0
+        self.patrol_label = None
         self.task_generation = 0
 
         self.bot_args = {
@@ -182,8 +181,9 @@ class MCBot:
     def cancel_task(self):
         self.task_generation += 1
         self.patrol_active = False
-        self.patrol_quartier = None
-        self.patrol_current_point = None
+        self.patrol_route = []
+        self.patrol_index = 0
+        self.patrol_label = None
         self.mode = "IDLE"
         self.stop_movement()
 
@@ -381,69 +381,13 @@ class MCBot:
 
     # ========================================================
     # PATROL
-    # ========================================================
-
-    def random_patrol_position(self):
-        return vec3(
-            HOME["x"] + random.randint(
-                -PATROL_RADIUS,
-                PATROL_RADIUS,
-            ),
-            HOME["y"],
-            HOME["z"] + random.randint(
-                -PATROL_RADIUS,
-                PATROL_RADIUS,
-            ),
-        )
-
-
-    def start_patrol(self):
-        if self.patrol_active:
-            self.chat("Je patrouille déjà.")
-            return
-
-        self.task_generation += 1
-        generation = self.task_generation
-
-        self.mode = "PATROL"
-        self.patrol_active = True
-        self.stop_movement()
-
-        self.chat(
-            f"Je commence ma patrouille "
-            f"dans un rayon de {PATROL_RADIUS} blocs."
-        )
-
-        self.run_patrol_step(generation)
-
-
-    def run_patrol_step(self, generation=None):
-        if not self.patrol_active:
-            return
-
-        if (
-            generation is not None
-            and not self.task_valid(generation)
-        ):
-            return
-
-        target = self.random_patrol_position()
-
-        self.log(
-            chalk.magenta(
-                f"Patrouille → {vec3_to_str(target)}"
-            )
-        )
-
-        self.pathfind(target)
-
-
-    # ========================================================
-    # PATROL PAR QUARTIER
     #
-    # Se déplace de point en point à l'intérieur d'un quartier
-    # en suivant GRAPH. mineflayer-pathfinder calcule le vrai
-    # chemin, GRAPH sert seulement à choisir le prochain point.
+    # La patrouille suit un itinéraire précalculé qui ne se
+    # déplace que le long des arêtes de GRAPH (aucun saut
+    # arbitraire) : soit sur tout le graphe (toute la ville),
+    # soit restreint aux points d'un quartier. mineflayer-
+    # pathfinder calcule ensuite le vrai chemin entre deux
+    # points consécutifs de cet itinéraire.
     # ========================================================
 
     def find_quartier(self, name):
@@ -464,86 +408,157 @@ class MCBot:
         ]
 
 
-    def next_quartier_point(self, quartier_name, current_point):
-        valid_points = self.quartier_points_valides(quartier_name)
-
-        neighbors = GRAPH.get(current_point, [])
-
-        candidates = [
+    def all_graph_points(self):
+        return [
             point
-            for point in neighbors
-            if point in valid_points
+            for point in GRAPH
+            if point in POINTS_INTERET
         ]
 
-        if not candidates:
-            candidates = [
-                point
-                for point in valid_points
-                if point != current_point
-            ]
 
-        if not candidates:
+    def get_bot_position(self):
+        try:
+            pos = self.bot.entity.position
+            return (pos.x, pos.y, pos.z)
+        except Exception:
             return None
 
-        return random.choice(candidates)
+
+    def nearest_point(self, allowed_points, position):
+        if position is None:
+            return None
+
+        px, _, pz = position
+
+        nearest = None
+        nearest_dist = None
+
+        for point in allowed_points:
+            if point not in POINTS_INTERET:
+                continue
+
+            x, _, z = POINTS_INTERET[point]
+            dist = (x - px) ** 2 + (z - pz) ** 2
+
+            if nearest_dist is None or dist < nearest_dist:
+                nearest = point
+                nearest_dist = dist
+
+        return nearest
 
 
-    def start_quartier_patrol(self, quartier_name):
+    def build_patrol_route(self, allowed_points, start_point=None):
+        allowed = [
+            point
+            for point in allowed_points
+            if point in POINTS_INTERET
+        ]
+
+        if not allowed:
+            return []
+
+        allowed_set = set(allowed)
+
+        if start_point not in allowed_set:
+            start_point = allowed[0]
+
+        visited = set()
+        route = []
+
+        def visit(node):
+            visited.add(node)
+            route.append(node)
+
+            for neighbor in GRAPH.get(node, []):
+                if (
+                    neighbor in allowed_set
+                    and neighbor not in visited
+                ):
+                    visit(neighbor)
+                    # revient sur node : toujours une arête valide
+                    route.append(node)
+
+        visit(start_point)
+
+        return route
+
+
+    def start_patrol_route(self, allowed_points, label):
         if self.patrol_active:
             self.chat("Je patrouille déjà.")
             return False
 
-        matched = self.find_quartier(quartier_name)
+        start_point = self.nearest_point(
+            allowed_points,
+            self.get_bot_position(),
+        )
 
-        if not matched:
+        route = self.build_patrol_route(allowed_points, start_point)
+
+        if len(route) < 2:
             self.log(
                 chalk.red(
-                    f"Quartier inconnu : {quartier_name}"
+                    f"Pas assez de points pour patrouiller : {label}"
                 )
             )
-            self.chat("Je ne connais pas ce quartier.")
-            return False
-
-        valid_points = self.quartier_points_valides(matched)
-
-        if not valid_points:
-            self.log(
-                chalk.red(
-                    f"Aucun point connu dans le quartier : {matched}"
-                )
-            )
-            self.chat("Ce quartier n'a aucun point que je connais.")
+            self.chat("Je n'ai pas assez de points pour patrouiller ici.")
             return False
 
         self.task_generation += 1
         generation = self.task_generation
 
-        self.mode = "PATROL_QUARTIER"
+        self.mode = "PATROL_ROUTE"
         self.patrol_active = True
-        self.patrol_quartier = matched
-        self.patrol_current_point = valid_points[0]
+        self.patrol_route = route
+        self.patrol_index = 0
+        self.patrol_label = label
         self.stop_movement()
 
-        self.chat(
-            f"Je patrouille dans {matched}."
-        )
+        self.chat(f"Je patrouille : {label}.")
 
         self.log(
             chalk.cyan(
-                f"Patrouille de quartier activée : {matched}"
+                f"Patrouille activée ({len(route)} étapes) : {label}"
             )
         )
 
-        self.run_quartier_patrol_step(generation)
+        self.goto_patrol_index(generation)
 
         return True
 
 
-    def run_quartier_patrol_step(self, generation=None):
-        if not self.patrol_active:
-            return
+    def handle_patrol_command(self, arg):
+        arg = arg.strip().lower()
 
-        if not self.patrol_quartier:
+        if arg in ("", "ville", "toute la ville", "ville entiere", "ville entière"):
+            return self.start_patrol_route(
+                self.all_graph_points(),
+                "toute la ville",
+            )
+
+        matched = self.find_quartier(arg)
+
+        if not matched:
+            self.log(
+                chalk.red(f"Quartier inconnu : {arg}")
+            )
+            print(
+                chalk.gray(
+                    "Quartiers disponibles : "
+                    + ", ".join(QUARTIERS.keys())
+                )
+            )
+            self.chat("Je ne connais pas ce quartier.")
+            return False
+
+        return self.start_patrol_route(
+            self.quartier_points_valides(matched),
+            matched,
+        )
+
+
+    def goto_patrol_index(self, generation=None):
+        if not self.patrol_active or not self.patrol_route:
             return
 
         if (
@@ -552,34 +567,35 @@ class MCBot:
         ):
             return
 
-        next_point = self.next_quartier_point(
-            self.patrol_quartier,
-            self.patrol_current_point,
-        )
-
-        if not next_point:
-            self.log(
-                chalk.red(
-                    f"Plus aucun point à visiter dans "
-                    f"{self.patrol_quartier}."
-                )
-            )
-            self.cancel_task()
-            return
-
-        self.patrol_current_point = next_point
-
-        x, y, z = POINTS_INTERET[next_point]
+        point = self.patrol_route[self.patrol_index]
+        x, y, z = POINTS_INTERET[point]
         target = vec3(x, y, z)
 
         self.log(
             chalk.magenta(
-                f"Patrouille [{self.patrol_quartier}] → "
-                f"{next_point} : {vec3_to_str(target)}"
+                f"Patrouille [{self.patrol_label}] → "
+                f"{point} : {vec3_to_str(target)}"
             )
         )
 
         self.pathfind(target)
+
+
+    def run_patrol_route_step(self, generation=None):
+        if not self.patrol_active or not self.patrol_route:
+            return
+
+        if (
+            generation is not None
+            and not self.task_valid(generation)
+        ):
+            return
+
+        self.patrol_index = (
+            (self.patrol_index + 1) % len(self.patrol_route)
+        )
+
+        self.goto_patrol_index(generation)
 
 
     # ========================================================
@@ -654,22 +670,18 @@ class MCBot:
             "patrol",
             "patrouiller",
         ):
-            self.start_patrol()
+            self.handle_patrol_command("")
             return True
 
-        # ----------------------------------------------------
-        # PATROL PAR QUARTIER
-        # ----------------------------------------------------
-
         if lower.startswith("patrouille "):
-            self.start_quartier_patrol(
-                command[len("patrouille "):].strip()
+            self.handle_patrol_command(
+                command[len("patrouille "):]
             )
             return True
 
         if lower.startswith("patrol "):
-            self.start_quartier_patrol(
-                command[len("patrol "):].strip()
+            self.handle_patrol_command(
+                command[len("patrol "):]
             )
             return True
 
@@ -826,7 +838,7 @@ class MCBot:
                         "  go home               → maison\n"
                         "  home                  → maison\n"
                         "  players               → joueurs visibles\n"
-                        "  patrouille            → lancer patrouille\n"
+                        "  patrouille            → patrouiller toute la ville\n"
                         "  patrouille <quartier> → patrouiller un quartier\n"
                         "  quartiers             → lister les quartiers\n"
                         "  stop                  → arrêter la tâche\n"
@@ -971,14 +983,7 @@ class MCBot:
                         self.patrol_active
                         and self.task_valid(generation)
                     ):
-                        if self.mode == "PATROL_QUARTIER":
-                            self.run_quartier_patrol_step(
-                                generation
-                            )
-                        else:
-                            self.run_patrol_step(
-                                generation
-                            )
+                        self.run_patrol_route_step(generation)
 
                 threading.Thread(
                     target=continue_patrol,
