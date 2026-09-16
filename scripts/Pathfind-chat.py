@@ -763,6 +763,8 @@ class MCBot:
                     "va à l'",
                     "va a l'",
                     "go ",
+                    "go to",
+                    "go t",
                     "aller à ",
                     "aller a ",
                 ]
