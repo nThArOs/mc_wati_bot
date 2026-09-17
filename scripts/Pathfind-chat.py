@@ -37,41 +37,42 @@ HOME = {
 }
 
 PATROL_WAIT = 5
+PATROL_STUCK_CHECK_INTERVAL = 5
+PATROL_STUCK_MIN_DISTANCE = 1.5
+PATROL_STUCK_CHECKS = 3
 
 POINTS_INTERET = {
     "usine a fer": (1690, 132, -1145),
-    "usine à fer": (1690, 132, -1145),
-    
-    "salle des coffres": (1792, 102, -1158),
-    
+
+    "salle des coffres": (1776, 119, -1144),
+    "route 1": (1693, 96, -1209),
+    "route 2": (1717, 111, -1163),
+    "route 3": (1722, 122, -1128),
+    "route 4": (1721, 131, -1101),
     "arc de triomphe": (1683, 96, -1273),
-    
+
     "george orwell": (1697, 96, -1323),
     "place gauche": (1608, 95, -1236),
     "place haute": (1551, 95, -1271),
     "place droite": (1629, 95, -1311),
-    "parc": (1629, 95, -1311),
-    
+    "parc": (1621, 95, -1272),
+
     "palace": (1707, 97, -1374),
     "palais": (1634, 95, -1481),
     "theatre": (1714, 95, -1466),
-    "théâtre": (1714, 95, -1466),
 
-   
-    
     "horloge": (1746, 95, -1418),
-    "river": (1787, 119, -1381),
+    "river": (1796, 191, -1449),
     "intersection 1": (1796, 104, -1419),
     "church": (1822, 112, -1413),
     "intersection 2": (1820, 119, -1388),
     "bourdieu-cathedral": (1820, 119, -1388),
-    
+
     "cathedral": (1776, 129, -1328),
-    "cathedrale": (1776, 129, -1328),
 }
 
 QUARTIERS = {
-    "Haute ville": ["usine a fer", "salle des coffres", "arc de triomphe"],
+    "Haute ville": ["usine a fer", "route 1", "route 2", "route 3", "route 4", "salle des coffres", "arc de triomphe"],
     "place george orwell": ["george orwell", "place gauche", "place haute", "place droite", "parc"],
     "quartier du theatre": ["theatre","palace","palais"],
     "quartier pierre bourdieu": ["horloge", "intersection 1","river", "church", "intersection 2"],
@@ -83,9 +84,15 @@ QUARTIERS = {
 # =========================
 
 GRAPH = {
-    "usine a fer": ["salle des coffres","arc de triomphe"],
-    "salle des coffres": ["usine a fer", "arc de triomphe"],
-    "arc de triomphe": ["usine a fer","salle des coffres", "george orwell"],
+    "usine a fer": ["route 4"],
+    "route 4": ["usine a fer", "route 3"],
+    "route 3": ["route 4", "route 2"],
+    "route 2": ["route 3", "route 1", "salle des coffres"],
+    "salle des coffres": ["route 2"],
+
+    "route 1": ["route 2", "arc de triomphe"],
+
+    "arc de triomphe": ["route 1", "george orwell"],
 
     "george orwell": ["arc de triomphe", "horloge", "place gauche", "place droite", "parc","palace"],
     "place gauche": ["george orwell", "place haute", "parc"],
@@ -697,6 +704,77 @@ class MCBot:
 
         self.pathfind(target)
 
+        self.start_patrol_watchdog(
+            generation,
+            self.patrol_index,
+            point,
+        )
+
+
+    def start_patrol_watchdog(self, generation, index, point_name):
+        # Si goal_reached ne se déclenche jamais (point
+        # inatteignable, coincé sur le terrain...), on ne veut
+        # pas rester bloqué indéfiniment. Mais un simple délai
+        # fixe coupait des trajets encore en cours (points
+        # éloignés sur le chemin de montagne) : on vérifie donc
+        # que le bot a réellement arrêté de bouger, pas juste
+        # qu'il met du temps à arriver.
+
+        def watchdog():
+            last_pos = self.get_bot_position()
+            stale_checks = 0
+
+            while True:
+                time.sleep(PATROL_STUCK_CHECK_INTERVAL)
+
+                if not self.patrol_active:
+                    return
+
+                if (
+                    generation is not None
+                    and not self.task_valid(generation)
+                ):
+                    return
+
+                if self.patrol_index != index:
+                    return
+
+                current_pos = self.get_bot_position()
+
+                if last_pos is not None and current_pos is not None:
+                    moved = (
+                        (current_pos[0] - last_pos[0]) ** 2
+                        + (current_pos[2] - last_pos[2]) ** 2
+                    ) ** 0.5
+
+                    if moved < PATROL_STUCK_MIN_DISTANCE:
+                        stale_checks += 1
+                    else:
+                        stale_checks = 0
+
+                last_pos = current_pos
+
+                if stale_checks >= PATROL_STUCK_CHECKS:
+                    self.log(
+                        chalk.yellow(
+                            f"⚠ Bloqué en essayant d'atteindre "
+                            f"{point_name}, je passe au point suivant."
+                        )
+                    )
+
+                    self.chat(
+                        f"Je n'arrive pas à atteindre {point_name}, je continue."
+                    )
+
+                    self.run_patrol_route_step(generation)
+
+                    return
+
+        threading.Thread(
+            target=watchdog,
+            daemon=True,
+        ).start()
+
 
     def run_patrol_route_step(self, generation=None):
         if not self.patrol_active or not self.patrol_route:
@@ -817,6 +895,13 @@ class MCBot:
         # ----------------------------------------------------
         # ALLER QUELQUE PART VIA LE GRAPHE (trajet ponctuel)
         # ----------------------------------------------------
+
+        if lower in ("chemin", "route"):
+            self.log(
+                chalk.yellow("Destination manquante.")
+            )
+            self.chat("Vers quel point ? (chemin <point>)")
+            return True
 
         if lower.startswith("chemin "):
             self.go_via_graph(
@@ -1033,6 +1118,15 @@ class MCBot:
         self.bot.loadPlugin(
             pathfinder_lib.pathfinder
         )
+
+        # On a des routes construites en dur (le chemin de
+        # montagne route 1-4 par ex.) : on ne veut pas que le
+        # bot creuse un raccourci ou pose des blocs, il doit
+        # suivre le terrain/la route existante.
+        movements = pathfinder_lib.Movements(self.bot)
+        movements.canDig = False
+        movements.allow1by1towers = False
+        self.bot.pathfinder.setMovements(movements)
 
         self.bot.loadPlugin(auto_eat)
 
