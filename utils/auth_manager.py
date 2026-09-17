@@ -172,13 +172,13 @@ class TokenManager:
     def has_cached_tokens(self):
         files = self.list_token_files()
         for f in files:
-            if f["size"] > 0:
+            if f["size"] > 10:
                 return True
         return False
 
     def get_token_summary(self):
         files = self.list_token_files()
-        has_tokens = any(f["size"] > 0 for f in files)
+        has_tokens = any(f["size"] > 10 for f in files)
 
         account_hint = None
         for f in files:
@@ -268,6 +268,7 @@ class AutomatedAuthLogin:
             try:
                 from selenium import webdriver
                 from selenium.webdriver.common.by import By
+                from selenium.webdriver.common.keys import Keys
                 from selenium.webdriver.support.ui import WebDriverWait
                 from selenium.webdriver.support import expected_conditions as EC
                 from selenium.webdriver.chrome.options import Options
@@ -289,7 +290,7 @@ class AutomatedAuthLogin:
                 wait = WebDriverWait(driver, 15)
 
                 try:
-                    # 1. Chargement de la page et saisie du code
+                    # 1. Chargement de la page et saisie du code de liaison
                     driver.get(verification_uri)
                     log(
                         chalk.cyan(
@@ -315,68 +316,293 @@ class AutomatedAuthLogin:
                     )
                     time.sleep(2)
 
-                    # 2. Saisie de l'email si configuré
-                    if email:
-                        try:
-                            email_input = WebDriverWait(driver, 6).until(
-                                EC.element_to_be_clickable((By.NAME, "loginfmt"))
-                            )
-                            email_input.clear()
-                            email_input.send_keys(email)
-                            driver.find_element(By.ID, "idSIButton9").click()
-                            log(chalk.cyan(f"Email {email} saisi."))
-                            time.sleep(2)
-                        except Exception:
-                            pass
+                    # Boucle adaptative de validation des étapes Microsoft
+                    start_time = time.time()
+                    timeout = 90
+                    email_submitted = not bool(email)
+                    password_submitted = not bool(password)
+                    totp_submitted = not (
+                        totp_manager and totp_manager.is_configured()
+                    )
 
-                    # 3. Saisie du mot de passe si configuré
-                    if password:
-                        try:
-                            pwd_input = WebDriverWait(driver, 6).until(
-                                EC.element_to_be_clickable((By.NAME, "passwd"))
-                            )
-                            pwd_input.clear()
-                            pwd_input.send_keys(password)
-                            driver.find_element(By.ID, "idSIButton9").click()
-                            log(chalk.cyan("Mot de passe saisi."))
-                            time.sleep(3)
-                        except Exception:
-                            pass
-
-                    # 4. Saisie du jeton 2FA TOTP si configuré
-                    if totp_manager and totp_manager.is_configured():
-                        try:
-                            totp_code, _ = totp_manager.generate_code()
-                            totp_input = WebDriverWait(driver, 6).until(
-                                EC.element_to_be_clickable(
-                                    (By.ID, "idTxtBx_SAOTCC_OTC")
-                                )
-                            )
-                            totp_input.clear()
-                            totp_input.send_keys(totp_code)
-                            driver.find_element(
-                                By.ID, "idSubmit_SAOTCC_Continue"
-                            ).click()
-                            log(chalk.cyan(f"Jeton 2FA TOTP {totp_code} validé."))
-                            time.sleep(2)
-                        except Exception:
-                            pass
-
-                    # 5. Validation finale
-                    try:
-                        accept_btn = WebDriverWait(driver, 5).until(
-                            EC.element_to_be_clickable((By.ID, "idSIButton9"))
+                    log(
+                        chalk.cyan(
+                            "Suivi adaptatif des étapes Microsoft (email / mot de passe / 2FA / consentement)..."
                         )
-                        accept_btn.click()
-                    except Exception:
-                        pass
+                    )
+
+                    while time.time() - start_time < timeout:
+                        time.sleep(1.2)
+
+                        # A. Écran de sélection de compte (tuile existante)
+                        if email and not email_submitted:
+                            try:
+                                tiles = driver.find_elements(
+                                    By.XPATH,
+                                    f"//*[contains(text(), '{email}')]",
+                                )
+                                for t in tiles:
+                                    if t.is_displayed():
+                                        t.click()
+                                        log(
+                                            chalk.green(
+                                                f"✓ Compte {email} sélectionné dans la liste."
+                                            )
+                                        )
+                                        email_submitted = True
+                                        time.sleep(1.5)
+                                        break
+                            except Exception:
+                                pass
+
+                        # B. Saisie de l'adresse email
+                        if email and not email_submitted:
+                            try:
+                                email_inputs = driver.find_elements(
+                                    By.CSS_SELECTOR,
+                                    "input[name='loginfmt'], #i0116, input[type='email'], input[name='username']",
+                                )
+                                for inp in email_inputs:
+                                    if inp.is_displayed() and inp.is_enabled():
+                                        inp.clear()
+                                        inp.send_keys(email)
+                                        time.sleep(0.5)
+                                        try:
+                                            btn = driver.find_element(
+                                                By.ID, "idSIButton9"
+                                            )
+                                            if btn.is_displayed() and btn.is_enabled():
+                                                btn.click()
+                                            else:
+                                                inp.send_keys(Keys.ENTER)
+                                        except Exception:
+                                            inp.send_keys(Keys.ENTER)
+
+                                        log(
+                                            chalk.green(
+                                                f"✓ Email {email} renseigné et validé."
+                                            )
+                                        )
+                                        email_submitted = True
+                                        time.sleep(2)
+                                        break
+                            except Exception:
+                                pass
+
+                        # C. Écran "Autre méthode de connexion" / Dérivation vers TOTP ou Mot de passe
+                        try:
+                            alt_method_links = driver.find_elements(
+                                By.CSS_SELECTOR,
+                                "a#signInAnotherWay, a#idA_PWD_SwitchToCredPicker, a#idA_SAOTCS_AlternativeMethod, a#idA_SAOTCC_AlternativeMethod",
+                            )
+                            if not alt_method_links:
+                                alt_method_links = driver.find_elements(
+                                    By.XPATH,
+                                    "//a[contains(text(), 'autrement') or contains(text(), 'autre méthode') or contains(text(), 'autres options') or contains(text(), 'autre option') or contains(text(), 'other ways') or contains(text(), 'Sign-in options') or contains(text(), 'Je ne peux pas utiliser') or contains(text(), 'options de connexion')]",
+                                )
+                            for link in alt_method_links:
+                                if link.is_displayed() and link.is_enabled():
+                                    link.click()
+                                    log(
+                                        chalk.cyan(
+                                            "Sélection des autres options d'authentification..."
+                                        )
+                                    )
+                                    time.sleep(1.5)
+                                    break
+                        except Exception:
+                            pass
+
+                        # D. Sélection de l'option "Code de l'application / TOTP" ou "Mot de passe"
+                        if (
+                            totp_manager
+                            and totp_manager.is_configured()
+                            and not totp_submitted
+                        ):
+                            try:
+                                totp_option_elements = driver.find_elements(
+                                    By.XPATH,
+                                    "//*[contains(text(), 'code') or contains(text(), 'd’une application') or contains(text(), \"d'une application\") or contains(text(), 'verification code') or contains(text(), 'authentificateur') or contains(text(), 'Authenticator') or contains(text(), 'application mobile')]",
+                                )
+                                for opt in totp_option_elements:
+                                    if opt.is_displayed() and opt.is_enabled():
+                                        opt.click()
+                                        log(
+                                            chalk.green(
+                                                "✓ Option 'Code d'application' sélectionnée."
+                                            )
+                                        )
+                                        time.sleep(1.5)
+                                        break
+                            except Exception:
+                                pass
+                        elif password and not password_submitted:
+                            try:
+                                pwd_option_elements = driver.find_elements(
+                                    By.XPATH,
+                                    "//*[contains(text(), 'mot de passe') or contains(text(), 'password') or @id='idA_PWD_SwitchToPassword']",
+                                )
+                                for opt in pwd_option_elements:
+                                    if opt.is_displayed() and opt.is_enabled():
+                                        opt.click()
+                                        log(
+                                            chalk.green(
+                                                "✓ Option 'Mot de passe' sélectionnée."
+                                            )
+                                        )
+                                        time.sleep(1.5)
+                                        break
+                            except Exception:
+                                pass
+
+                        # E. Saisie du mot de passe
+                        if password and not password_submitted:
+                            try:
+                                pwd_inputs = driver.find_elements(
+                                    By.CSS_SELECTOR,
+                                    "input[name='passwd'], #i0118, input[type='password']",
+                                )
+                                for inp in pwd_inputs:
+                                    if inp.is_displayed() and inp.is_enabled():
+                                        inp.clear()
+                                        inp.send_keys(password)
+                                        time.sleep(0.5)
+                                        try:
+                                            btn = driver.find_element(
+                                                By.ID, "idSIButton9"
+                                            )
+                                            if btn.is_displayed() and btn.is_enabled():
+                                                btn.click()
+                                            else:
+                                                inp.send_keys(Keys.ENTER)
+                                        except Exception:
+                                            inp.send_keys(Keys.ENTER)
+
+                                        log(
+                                            chalk.green(
+                                                "✓ Mot de passe renseigné et validé."
+                                            )
+                                        )
+                                        password_submitted = True
+                                        time.sleep(2)
+                                        break
+                            except Exception:
+                                pass
+
+                        # F. Saisie du code 2FA / TOTP
+                        if (
+                            totp_manager
+                            and totp_manager.is_configured()
+                            and not totp_submitted
+                        ):
+                            try:
+                                totp_inputs = driver.find_elements(
+                                    By.CSS_SELECTOR,
+                                    "#idTxtBx_SAOTCC_OTC, input[name='otc'], input[type='tel'], input[autocomplete='one-time-code']",
+                                )
+                                for inp in totp_inputs:
+                                    if inp.is_displayed() and inp.is_enabled():
+                                        code, rem = totp_manager.generate_code()
+                                        inp.clear()
+                                        inp.send_keys(code)
+                                        time.sleep(0.5)
+                                        sub_btns = driver.find_elements(
+                                            By.CSS_SELECTOR,
+                                            "#idSubmit_SAOTCC_Continue, #idSIButton9, input[type='submit']",
+                                        )
+                                        clicked = False
+                                        for sb in sub_btns:
+                                            if sb.is_displayed() and sb.is_enabled():
+                                                sb.click()
+                                                clicked = True
+                                                break
+                                        if not clicked:
+                                            inp.send_keys(Keys.ENTER)
+
+                                        log(
+                                            chalk.green(
+                                                f"✓ Jeton 2FA TOTP {code} renseigné et validé."
+                                            )
+                                        )
+                                        totp_submitted = True
+                                        time.sleep(2)
+                                        break
+                            except Exception:
+                                pass
+
+                        # G. Écran de consentement Minecraft ("Êtes-vous en train de vous connecter à Minecraft ?")
+                        try:
+                            consent_btns = driver.find_elements(
+                                By.XPATH,
+                                "//button[contains(text(), 'Continuer') or contains(text(), 'Continue') or contains(text(), 'Oui') or contains(text(), 'Yes') or contains(text(), 'Accepter') or contains(text(), 'Accept')] | //input[@type='submit' and (contains(@value, 'Continuer') or contains(@value, 'Continue') or contains(@value, 'Oui') or contains(@value, 'Yes'))]",
+                            )
+                            for cb in consent_btns:
+                                if cb.is_displayed() and cb.is_enabled():
+                                    cb.click()
+                                    log(
+                                        chalk.green(
+                                            "✓ Écran de confirmation / consentement validé."
+                                        )
+                                    )
+                                    time.sleep(2)
+                                    break
+                        except Exception:
+                            pass
+
+                        # H. Écran "Rester connecté ?" (KMSI)
+                        try:
+                            kmsi_btns = driver.find_elements(By.ID, "idSIButton9")
+                            for b in kmsi_btns:
+                                if b.is_displayed() and b.is_enabled():
+                                    val = (
+                                        b.get_attribute("value")
+                                        or b.text
+                                        or ""
+                                    ).lower()
+                                    if any(
+                                        w in val
+                                        for w in (
+                                            "oui",
+                                            "yes",
+                                            "continuer",
+                                            "continue",
+                                            "suivant",
+                                            "next",
+                                        )
+                                    ):
+                                        b.click()
+                                        log(
+                                            chalk.green(
+                                                "✓ Écran 'Rester connecté' validé."
+                                            )
+                                        )
+                                        time.sleep(2)
+                                        break
+                        except Exception:
+                            pass
+
+                        # I. Vérification de succès (écran final)
+                        try:
+                            done_markers = driver.find_elements(
+                                By.XPATH,
+                                "//*[contains(text(), 'connecté') or contains(text(), 'All set') or contains(text(), 'terminé') or contains(text(), 'All done') or contains(text(), 'Tout est prêt')]",
+                            )
+                            if any(m.is_displayed() for m in done_markers):
+                                log(
+                                    chalk.green(
+                                        "✓ Authentification Microsoft terminée avec succès !"
+                                    )
+                                )
+                                break
+                        except Exception:
+                            pass
 
                     if headless:
                         log(chalk.green("✓ Authentification headless validée !"))
                     else:
                         log(
                             chalk.green(
-                                "✓ Vous pouvez sélectionner votre compte dans la fenêtre Chrome."
+                                "✓ Saisie terminée. La fenêtre Chrome reste ouverte pour vérification."
                             )
                         )
 

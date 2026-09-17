@@ -81,6 +81,16 @@ class TestTokenManager:
         assert deleted == 1
         assert not tm.has_cached_tokens()
 
+    def test_empty_files_not_treated_as_cached_tokens(self, temp_tokens_dir):
+        tm = TokenManager("bot_test", base_dir=temp_tokens_dir)
+        token_file = os.path.join(tm.get_profile_path(), "empty-cache.json")
+        with open(token_file, "w", encoding="utf-8") as f:
+            f.write('{}')
+
+        assert not tm.has_cached_tokens()
+        summary = tm.get_token_summary()
+        assert summary["has_tokens"] is False
+
 
 class TestMfaDeviceCodeHandler:
 
