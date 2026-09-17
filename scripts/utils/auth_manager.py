@@ -223,23 +223,44 @@ class TokenManager:
 
 
 # ============================================================
-# AUTOMATED AUTH LOGIN (HEADLESS SELENIUM)
+# AUTOMATED AUTH LOGIN (SELENIUM AUTO-FILLER)
 # ============================================================
 
 class AutomatedAuthLogin:
-    """Automatisation sans tête (headless) de la validation Device Code et 2FA.
+    """Automatisation de la validation Device Code et 2FA avec Selenium.
 
-    Permet de valider automatiquement le formulaire Microsoft et le code
-    TOTP en arrière-plan lorsque les identifiants sont fournis.
+    Ouvre une fenêtre de navigateur Chrome, saisit automatiquement le code
+    de validation Microsoft, clique sur 'Suivant', et pré-remplit les
+    identifiants et le jeton 2FA TOTP si configurés.
     """
 
     @staticmethod
-    def start_headless_login(
+    def copy_to_clipboard(text):
+        """Copie le code dans le presse-papiers du système."""
+        try:
+            import subprocess
+
+            subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"Set-Clipboard -Value '{text}'",
+                ],
+                capture_output=True,
+                check=False,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def start_browser_login(
         verification_uri,
         user_code,
-        email,
-        password,
+        email=None,
+        password=None,
         totp_manager=None,
+        headless=False,
         logger=None,
     ):
         def _login_task():
@@ -252,86 +273,128 @@ class AutomatedAuthLogin:
                 from selenium.webdriver.chrome.options import Options
 
                 options = Options()
-                options.add_argument("--headless=new")
-                options.add_argument("--disable-gpu")
+                if headless:
+                    options.add_argument("--headless=new")
+                    options.add_argument("--disable-gpu")
+                else:
+                    options.add_experimental_option("detach", True)
+                    options.add_argument("--start-maximized")
+
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
-                options.add_argument("--window-size=1920,1080")
+                options.add_argument("--disable-notifications")
 
-                log(chalk.cyan("Démarrage du navigateur headless pour authentification..."))
+                log(chalk.cyan("Ouverture automatique de Chrome via Selenium..."))
                 driver = webdriver.Chrome(options=options)
                 wait = WebDriverWait(driver, 15)
 
                 try:
-                    # 1. Page Device Login & Code
+                    # 1. Chargement de la page et saisie du code
                     driver.get(verification_uri)
+                    log(
+                        chalk.cyan(
+                            f"Saisie automatique du code Microsoft : {user_code}..."
+                        )
+                    )
+
                     code_input = wait.until(
                         EC.element_to_be_clickable((By.ID, "otc"))
                     )
                     code_input.clear()
                     code_input.send_keys(user_code)
-                    
-                    next_btn = driver.find_element(By.ID, "idSIButton9")
+
+                    next_btn = wait.until(
+                        EC.element_to_be_clickable((By.ID, "idSIButton9"))
+                    )
                     next_btn.click()
+
+                    log(
+                        chalk.green(
+                            f"✓ Code {user_code} saisi et validé automatiquement dans le navigateur !"
+                        )
+                    )
                     time.sleep(2)
 
-                    # 2. Saisie de l'email
+                    # 2. Saisie de l'email si configuré
                     if email:
-                        email_input = wait.until(
-                            EC.element_to_be_clickable((By.NAME, "loginfmt"))
-                        )
-                        email_input.clear()
-                        email_input.send_keys(email)
-                        driver.find_element(By.ID, "idSIButton9").click()
-                        time.sleep(2)
-
-                    # 3. Saisie du mot de passe
-                    if password:
-                        pwd_input = wait.until(
-                            EC.element_to_be_clickable((By.NAME, "passwd"))
-                        )
-                        pwd_input.clear()
-                        pwd_input.send_keys(password)
-                        driver.find_element(By.ID, "idSIButton9").click()
-                        time.sleep(3)
-
-                    # 4. Gestion du 2FA / TOTP si demandé
-                    if totp_manager and totp_manager.is_configured():
                         try:
-                            totp_code, _ = totp_manager.generate_code()
-                            totp_input = WebDriverWait(driver, 5).until(
-                                EC.element_to_be_clickable((By.ID, "idTxtBx_SAOTCC_OTC"))
+                            email_input = WebDriverWait(driver, 6).until(
+                                EC.element_to_be_clickable((By.NAME, "loginfmt"))
                             )
-                            totp_input.clear()
-                            totp_input.send_keys(totp_code)
-                            driver.find_element(By.ID, "idSubmit_SAOTCC_Continue").click()
+                            email_input.clear()
+                            email_input.send_keys(email)
+                            driver.find_element(By.ID, "idSIButton9").click()
+                            log(chalk.cyan(f"Email {email} saisi."))
                             time.sleep(2)
                         except Exception:
                             pass
 
-                    # 5. Validation finale ("Rester connecté" / Autoriser)
+                    # 3. Saisie du mot de passe si configuré
+                    if password:
+                        try:
+                            pwd_input = WebDriverWait(driver, 6).until(
+                                EC.element_to_be_clickable((By.NAME, "passwd"))
+                            )
+                            pwd_input.clear()
+                            pwd_input.send_keys(password)
+                            driver.find_element(By.ID, "idSIButton9").click()
+                            log(chalk.cyan("Mot de passe saisi."))
+                            time.sleep(3)
+                        except Exception:
+                            pass
+
+                    # 4. Saisie du jeton 2FA TOTP si configuré
+                    if totp_manager and totp_manager.is_configured():
+                        try:
+                            totp_code, _ = totp_manager.generate_code()
+                            totp_input = WebDriverWait(driver, 6).until(
+                                EC.element_to_be_clickable(
+                                    (By.ID, "idTxtBx_SAOTCC_OTC")
+                                )
+                            )
+                            totp_input.clear()
+                            totp_input.send_keys(totp_code)
+                            driver.find_element(
+                                By.ID, "idSubmit_SAOTCC_Continue"
+                            ).click()
+                            log(chalk.cyan(f"Jeton 2FA TOTP {totp_code} validé."))
+                            time.sleep(2)
+                        except Exception:
+                            pass
+
+                    # 5. Validation finale
                     try:
                         accept_btn = WebDriverWait(driver, 5).until(
                             EC.element_to_be_clickable((By.ID, "idSIButton9"))
                         )
                         accept_btn.click()
-                        time.sleep(2)
                     except Exception:
                         pass
 
-                    log(chalk.green("✓ Authentification headless validée avec succès !"))
+                    if headless:
+                        log(chalk.green("✓ Authentification headless validée !"))
+                    else:
+                        log(
+                            chalk.green(
+                                "✓ Vous pouvez sélectionner votre compte dans la fenêtre Chrome."
+                            )
+                        )
 
                 finally:
-                    driver.quit()
+                    if headless:
+                        driver.quit()
 
             except Exception as e:
-                if logger:
-                    logger(
-                        chalk.yellow(
-                            f"Authentification automatique incomplète ({e}). "
-                            f"Veuillez valider manuellement via le lien et code affichés."
-                        )
+                log(
+                    chalk.yellow(
+                        f"Saisie Selenium non disponible ({e}). "
+                        f"Ouverture classique du navigateur..."
                     )
+                )
+                try:
+                    webbrowser.open(verification_uri)
+                except Exception:
+                    pass
 
         threading.Thread(target=_login_task, daemon=True).start()
 
@@ -344,8 +407,8 @@ class MfaDeviceCodeHandler:
     """Gestionnaire d'événements de connexion Device Code Microsoft (2FA).
 
     Intercepte le callback onMsaCode de Mineflayer / prismarine-auth,
-    affiche les instructions de validation 2FA en console avec simple_chalk,
-    génère le jeton TOTP si configuré et ouvre la page dans le navigateur.
+    affiche les instructions 2FA, copie le code dans le presse-papiers
+    et lance la saisie automatique via Selenium.
     """
 
     def __init__(
@@ -437,27 +500,18 @@ class MfaDeviceCodeHandler:
         print(chalk.yellow("=" * 60))
         print()
 
-        # Automatisation sans tête si activée et identifiants disponibles
-        if self.enable_headless and self.headless_email and self.headless_password:
-            AutomatedAuthLogin.start_headless_login(
+        # Copie automatique dans le presse-papiers
+        AutomatedAuthLogin.copy_to_clipboard(user_code)
+        self.logger(chalk.gray(f"Code {user_code} copié dans le presse-papiers."))
+
+        # Saisie et validation automatique via Selenium
+        if self.auto_open_browser and verification_uri:
+            AutomatedAuthLogin.start_browser_login(
                 verification_uri=verification_uri,
                 user_code=user_code,
                 email=self.headless_email,
                 password=self.headless_password,
                 totp_manager=self.totp_manager,
+                headless=self.enable_headless,
                 logger=self.logger,
             )
-        elif self.auto_open_browser and verification_uri:
-            try:
-                self.logger(
-                    chalk.cyan(
-                        "Ouverture de la page de validation dans le navigateur..."
-                    )
-                )
-                webbrowser.open(verification_uri)
-            except Exception as e:
-                self.logger(
-                    chalk.gray(
-                        f"Impossible d'ouvrir le navigateur automatique: {e}"
-                    )
-                )
