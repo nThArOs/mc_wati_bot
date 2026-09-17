@@ -31,6 +31,11 @@ POINTS_INTERET = {
     "bourdieu-cathedral": (1820, 119, -1388),
 
     "cathedral": (1776, 129, -1328),
+    
+    "nether sand dupe": (183, 114, -621),
+    "nether raid 2": (-226, 114, -478),
+    "nether creeper 2": (248, 114, -297),
+    
 }
 
 QUARTIERS = {
