@@ -1329,85 +1329,99 @@ class MCBot:
 
 
         @On(self.bot, "kicked")
-        def kicked(reason, loggedIn):
-            if loggedIn:
+        def kicked(reason=None, loggedIn=None, *args):
+            try:
+                if loggedIn:
+                    self.log(
+                        chalk.redBright(
+                            f"Kicked: {reason}"
+                        )
+                    )
+            except Exception as e:
                 self.log(
-                    chalk.redBright(
-                        f"Kicked: {reason}"
+                    chalk.red(
+                        f"Kicked error: {e}"
                     )
                 )
 
 
         @On(self.bot, "goal_reached")
-        def goal_reached(_this, _goal):
+        def goal_reached(*args, **kwargs):
+            try:
+                # ------------------------------------------------
+                # PATROUILLE
+                # ------------------------------------------------
 
-            # ------------------------------------------------
-            # PATROUILLE
-            # ------------------------------------------------
+                if self.patrol_active:
 
-            if self.patrol_active:
+                    generation = self.task_generation
 
-                generation = self.task_generation
+                    self.log(
+                        chalk.green(
+                            "✓ Point de patrouille atteint."
+                        )
+                    )
 
+                    def continue_patrol():
+                        if self.route_wait > 0:
+                            time.sleep(self.route_wait)
+
+                        if (
+                            self.patrol_active
+                            and self.task_valid(generation)
+                        ):
+                            self.run_patrol_route_step(generation)
+
+                    threading.Thread(
+                        target=continue_patrol,
+                        daemon=True,
+                    ).start()
+
+                    return
+
+                # ------------------------------------------------
+                # TÂCHE NORMALE
+                # ------------------------------------------------
+
+                messages = {
+                    "HOME": (
+                        "✓ Tâche terminée : "
+                        "je suis arrivé à la maison.",
+                        "Je suis arrivé à la maison.",
+                    ),
+
+                    "POINT": (
+                        "✓ Tâche terminée : "
+                        "je suis arrivé à destination.",
+                        "Je suis arrivé à destination.",
+                    ),
+
+                    "PLAYER": (
+                        "✓ Tâche terminée : "
+                        "je suis arrivé auprès du joueur.",
+                        "Je suis arrivé !",
+                    ),
+                }
+
+                result = messages.get(self.mode)
+
+                if result:
+                    log_message, chat_message = result
+
+                    self.log(
+                        chalk.green(log_message)
+                    )
+
+                    self.chat(chat_message)
+
+                    self.mode = "IDLE"
+
+            except Exception as e:
                 self.log(
-                    chalk.green(
-                        "✓ Point de patrouille atteint."
+                    chalk.red(
+                        f"Goal reached error: {e}"
                     )
                 )
-
-                def continue_patrol():
-                    if self.route_wait > 0:
-                        time.sleep(self.route_wait)
-
-                    if (
-                        self.patrol_active
-                        and self.task_valid(generation)
-                    ):
-                        self.run_patrol_route_step(generation)
-
-                threading.Thread(
-                    target=continue_patrol,
-                    daemon=True,
-                ).start()
-
-                return
-
-            # ------------------------------------------------
-            # TÂCHE NORMALE
-            # ------------------------------------------------
-
-            messages = {
-                "HOME": (
-                    "✓ Tâche terminée : "
-                    "je suis arrivé à la maison.",
-                    "Je suis arrivé à la maison.",
-                ),
-
-                "POINT": (
-                    "✓ Tâche terminée : "
-                    "je suis arrivé à destination.",
-                    "Je suis arrivé à destination.",
-                ),
-
-                "PLAYER": (
-                    "✓ Tâche terminée : "
-                    "je suis arrivé auprès du joueur.",
-                    "Je suis arrivé !",
-                ),
-            }
-
-            result = messages.get(self.mode)
-
-            if result:
-                log_message, chat_message = result
-
-                self.log(
-                    chalk.green(log_message)
-                )
-
-                self.chat(chat_message)
-
-                self.mode = "IDLE"
 
 
         @On(self.bot, "messagestr")
@@ -1512,23 +1526,29 @@ class MCBot:
 
 
         @On(self.bot, "end")
-        def end(reason):
-
-            self.log(
-                chalk.red(
-                    f"Disconnected: {reason}"
-                )
-            )
-
-            if self.reconnect:
+        def end(reason=None, *args):
+            try:
                 self.log(
-                    chalk.cyanBright(
-                        "Reconnexion..."
+                    chalk.red(
+                        f"Disconnected: {reason}"
                     )
                 )
 
-                time.sleep(2)
-                self.start_bot()
+                if self.reconnect:
+                    self.log(
+                        chalk.cyanBright(
+                            "Reconnexion..."
+                        )
+                    )
+
+                    time.sleep(2)
+                    self.start_bot()
+            except Exception as e:
+                self.log(
+                    chalk.red(
+                        f"End event error: {e}"
+                    )
+                )
 
 
 # ============================================================
