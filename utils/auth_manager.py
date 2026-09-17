@@ -289,6 +289,32 @@ class AutomatedAuthLogin:
                 driver = webdriver.Chrome(options=options)
                 wait = WebDriverWait(driver, 15)
 
+                def safe_click(elem):
+                    if not elem:
+                        return False
+                    try:
+                        target = elem
+                        try:
+                            clickable_parent = elem.find_element(
+                                By.XPATH,
+                                "./ancestor-or-self::*[@role='button' or self::button or self::a or contains(@class, 'tile') or contains(@class, 'row') or contains(@class, 'table')][1]",
+                            )
+                            if clickable_parent:
+                                target = clickable_parent
+                        except Exception:
+                            pass
+
+                        try:
+                            target.click()
+                            return True
+                        except Exception:
+                            pass
+
+                        driver.execute_script("arguments[0].click();", target)
+                        return True
+                    except Exception:
+                        return False
+
                 try:
                     # 1. Chargement de la page et saisie du code de liaison
                     driver.get(verification_uri)
@@ -343,15 +369,15 @@ class AutomatedAuthLogin:
                                 )
                                 for t in tiles:
                                     if t.is_displayed():
-                                        t.click()
-                                        log(
-                                            chalk.green(
-                                                f"✓ Compte {email} sélectionné dans la liste."
+                                        if safe_click(t):
+                                            log(
+                                                chalk.green(
+                                                    f"✓ Compte {email} sélectionné dans la liste."
+                                                )
                                             )
-                                        )
-                                        email_submitted = True
-                                        time.sleep(1.5)
-                                        break
+                                            email_submitted = True
+                                            time.sleep(1.5)
+                                            break
                             except Exception:
                                 pass
 
@@ -389,73 +415,7 @@ class AutomatedAuthLogin:
                             except Exception:
                                 pass
 
-                        # C. Écran "Autre méthode de connexion" / Dérivation vers TOTP ou Mot de passe
-                        try:
-                            alt_method_links = driver.find_elements(
-                                By.CSS_SELECTOR,
-                                "a#signInAnotherWay, a#idA_PWD_SwitchToCredPicker, a#idA_SAOTCS_AlternativeMethod, a#idA_SAOTCC_AlternativeMethod",
-                            )
-                            if not alt_method_links:
-                                alt_method_links = driver.find_elements(
-                                    By.XPATH,
-                                    "//a[contains(text(), 'autrement') or contains(text(), 'autre méthode') or contains(text(), 'autres options') or contains(text(), 'autre option') or contains(text(), 'other ways') or contains(text(), 'Sign-in options') or contains(text(), 'Je ne peux pas utiliser') or contains(text(), 'options de connexion')]",
-                                )
-                            for link in alt_method_links:
-                                if link.is_displayed() and link.is_enabled():
-                                    link.click()
-                                    log(
-                                        chalk.cyan(
-                                            "Sélection des autres options d'authentification..."
-                                        )
-                                    )
-                                    time.sleep(1.5)
-                                    break
-                        except Exception:
-                            pass
-
-                        # D. Sélection de l'option "Code de l'application / TOTP" ou "Mot de passe"
-                        if (
-                            totp_manager
-                            and totp_manager.is_configured()
-                            and not totp_submitted
-                        ):
-                            try:
-                                totp_option_elements = driver.find_elements(
-                                    By.XPATH,
-                                    "//*[contains(text(), 'code') or contains(text(), 'd’une application') or contains(text(), \"d'une application\") or contains(text(), 'verification code') or contains(text(), 'authentificateur') or contains(text(), 'Authenticator') or contains(text(), 'application mobile')]",
-                                )
-                                for opt in totp_option_elements:
-                                    if opt.is_displayed() and opt.is_enabled():
-                                        opt.click()
-                                        log(
-                                            chalk.green(
-                                                "✓ Option 'Code d'application' sélectionnée."
-                                            )
-                                        )
-                                        time.sleep(1.5)
-                                        break
-                            except Exception:
-                                pass
-                        elif password and not password_submitted:
-                            try:
-                                pwd_option_elements = driver.find_elements(
-                                    By.XPATH,
-                                    "//*[contains(text(), 'mot de passe') or contains(text(), 'password') or @id='idA_PWD_SwitchToPassword']",
-                                )
-                                for opt in pwd_option_elements:
-                                    if opt.is_displayed() and opt.is_enabled():
-                                        opt.click()
-                                        log(
-                                            chalk.green(
-                                                "✓ Option 'Mot de passe' sélectionnée."
-                                            )
-                                        )
-                                        time.sleep(1.5)
-                                        break
-                            except Exception:
-                                pass
-
-                        # E. Saisie du mot de passe
+                        # C. Saisie directe du mot de passe (si champ affiché à l'écran)
                         if password and not password_submitted:
                             try:
                                 pwd_inputs = driver.find_elements(
@@ -489,7 +449,84 @@ class AutomatedAuthLogin:
                             except Exception:
                                 pass
 
-                        # F. Saisie du code 2FA / TOTP
+                        # D. Sélection de méthode de connexion (quand plusieurs choix sont proposés)
+                        # Priorité 1 : "Utiliser votre mot de passe" si mot de passe configuré
+                        if password and not password_submitted:
+                            try:
+                                pwd_candidates = driver.find_elements(
+                                    By.XPATH,
+                                    "//*[@role='button' or self::button or self::a or contains(@class, 'tile')][contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'mot de passe') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'password')]",
+                                )
+                                if not pwd_candidates:
+                                    pwd_candidates = driver.find_elements(
+                                        By.XPATH,
+                                        "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'mot de passe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'password') or @id='idA_PWD_SwitchToPassword']",
+                                    )
+                                for cand in pwd_candidates:
+                                    if cand.is_displayed() and safe_click(cand):
+                                        log(
+                                            chalk.green(
+                                                "✓ Option 'Utiliser votre mot de passe' sélectionnée."
+                                            )
+                                        )
+                                        time.sleep(1.5)
+                                        break
+                            except Exception:
+                                pass
+
+                        # Priorité 2 : "Utiliser une application d'authentification" si mot de passe déjà saisi ou absent
+                        elif (
+                            totp_manager
+                            and totp_manager.is_configured()
+                            and not totp_submitted
+                        ):
+                            try:
+                                app_candidates = driver.find_elements(
+                                    By.XPATH,
+                                    "//*[@role='button' or self::button or self::a or contains(@class, 'tile')][contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'application') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'authenticator')]",
+                                )
+                                if not app_candidates:
+                                    app_candidates = driver.find_elements(
+                                        By.XPATH,
+                                        "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'application d’authentification') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), \"application d'authentification\") or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'code de vérification') or @data-value='PhoneAppOTP']",
+                                    )
+                                for cand in app_candidates:
+                                    if cand.is_displayed() and safe_click(cand):
+                                        log(
+                                            chalk.green(
+                                                "✓ Option 'Application d'authentification' sélectionnée."
+                                            )
+                                        )
+                                        time.sleep(1.5)
+                                        break
+                            except Exception:
+                                pass
+
+                        # E. Écran "Autre méthode de connexion" / Dérivation si Microsoft attend une notification mobile
+                        try:
+                            alt_method_links = driver.find_elements(
+                                By.CSS_SELECTOR,
+                                "a#signInAnotherWay, a#idA_PWD_SwitchToCredPicker, a#idA_SAOTCS_AlternativeMethod, a#idA_SAOTCC_AlternativeMethod",
+                            )
+                            if not alt_method_links:
+                                alt_method_links = driver.find_elements(
+                                    By.XPATH,
+                                    "//a[contains(text(), 'autrement') or contains(text(), 'autre méthode') or contains(text(), 'autres options') or contains(text(), 'autre option') or contains(text(), 'other ways') or contains(text(), 'Sign-in options') or contains(text(), 'Je ne peux pas utiliser') or contains(text(), 'options de connexion')]",
+                                )
+                            for link in alt_method_links:
+                                if link.is_displayed() and link.is_enabled():
+                                    if safe_click(link):
+                                        log(
+                                            chalk.cyan(
+                                                "Sélection des autres options d'authentification..."
+                                            )
+                                        )
+                                        time.sleep(1.5)
+                                        break
+                        except Exception:
+                            pass
+
+                        # F. Saisie directe du code 2FA / TOTP
                         if (
                             totp_manager
                             and totp_manager.is_configured()
