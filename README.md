@@ -12,7 +12,7 @@ JavaScript bridge.
 - `patrouille` : endless patrol, either the whole town or a single district
 - `livraison` : empty a chest near a point and deliver its contents to another
 - Come to player, home command
-- ELIZA chatbot (one independent conversation per bot)
+- Agent de conversation LLM via Ollama (une conversation indépendante par bot)
 - Double authentification Microsoft (2FA / MFA) avec persistance des jetons
 - Générateur de jetons TOTP 2FA (RFC 6238 / Microsoft Authenticator)
 - Isolation des dossiers de profils de jetons par bot (`tokens/<nom_du_bot>`)
@@ -28,11 +28,11 @@ JavaScript bridge.
 | `movement.py` | Graph pathfinding, patrol and one-shot travel engine |
 | `chest.py` | Chest interaction and delivery logic |
 | `commands.py` | Command dispatch (terminal + in-game chat) and the console loop |
-| `bot.py` | The `MCBot` class, mineflayer setup and events |
+| `bot.py` | The `MCBot` class, mineflayer setup and events. Also the entry point used by the orchestrator (subprocess, env-var driven) |
+| `llm_agent.py` | Conversation agent backed by Ollama, used as the chat fallback |
 | `main.py` | Entry point: starts every bot listed in `config.BOTS` |
 | `orchestrator.py` | Multi-bot fleet manager with staggered startup and chat routing |
 | `utils/auth_manager.py` | OAuth2 device code handler, token cache and TOTP 2FA |
-| `Pathfind-chat.py` | Historical standalone bot runner with full 2FA and environment support |
 
 ## Configuration 2FA & Jetons
 
@@ -43,12 +43,26 @@ Copiez `.env.example` en `.env` pour personnaliser les options :
 - `MICROSOFT_TOTP_SECRET` : Clé secrète Base32 pour générer automatiquement le code 2FA TOTP.
 - `ENABLE_HEADLESS_AUTH` : Active la connexion 100% autonome via Playwright/Selenium en tâche de fond.
 
+## Configuration Agent de conversation (LLM)
+
+L'agent de chat tourne sur [Ollama](https://ollama.com) en local :
+
+```bash
+ollama serve
+ollama pull llama3.1
+```
+
+- `OLLAMA_HOST` : URL du serveur Ollama (par défaut `http://localhost:11434`).
+- `OLLAMA_MODEL` : Modèle utilisé pour la conversation (par défaut `llama3.1`).
+
+Si Ollama n'est pas installé ou injoignable, le bot répond juste "Salut !" au spawn et ignore silencieusement les messages de chat sans commande.
+
 ## Installation
 
 ### Python
 
 ```bash
-pip install -r requirements.txt.txt
+pip install -r requirements.txt
 ```
 
 ### Node.js
@@ -61,8 +75,6 @@ npm install
 
 ### Mode Bot Unique (Unitaire)
 ```bash
-python scripts/Pathfind-chat.py
-# ou
 python scripts/main.py
 ```
 

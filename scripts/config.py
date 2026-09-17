@@ -1,3 +1,5 @@
+import os
+
 # ============================================================
 # CONFIG SERVEUR / BOT
 # ============================================================
@@ -6,6 +8,13 @@ SERVER_HOST = "game02.octoheberg.fr"
 SERVER_PORT = 25571
 BOT_VERSION = "1.21.11"
 RECONNECT = True
+
+# ============================================================
+# AGENT DE CONVERSATION (LLM via Ollama)
+# ============================================================
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 
 # Configuration des bots proposés
 BOTS = [

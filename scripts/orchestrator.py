@@ -46,7 +46,7 @@ BOT_COLORS = {
 
 
 class BotProcess:
-    """Encapsule un sous-processus de bot unitaire (Pathfind-chat.py)."""
+    """Encapsule un sous-processus de bot unitaire (bot.py)."""
 
     def __init__(self, bot_info, script_path):
         self.info = bot_info
@@ -162,7 +162,7 @@ class BotManager:
         self.stagger_delay = stagger_delay
         self.script_path = os.path.join(
             os.path.dirname(__file__),
-            "Pathfind-chat.py",
+            "bot.py",
         )
         self.bots = {}
 

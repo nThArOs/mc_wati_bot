@@ -23,9 +23,9 @@ Le bot est capable de se connecter à un serveur Minecraft distant ou local, de 
 - **Double Interface de Contrôle** :
   - Console REPL interactive dans le terminal (`terminal_loop`).
   - Réception et interprétation des messages du chat in-game Minecraft (`messagestr`).
-- **Chatbot Conversationnel de Repli (ELIZA)** :
-  - Intégration du moteur classique ELIZA (`eliza.py` et script `doctor.txt`).
-  - Lorsque le bot reçoit un message qui ne correspond à aucune commande connue, ELIZA prend le relais pour maintenir une conversation vivante.
+- **Agent de Conversation de Repli (LLM via Ollama)** :
+  - Intégration d'un agent conversationnel (`llm_agent.py`) appuyé sur un modèle local servi par Ollama.
+  - Lorsque le bot reçoit un message qui ne correspond à aucune commande connue, l'agent prend le relais pour maintenir une conversation vivante, avec un historique indépendant par joueur et par bot.
 - **Survie & Besoins Vitaux** :
   - Gestion automatique de la nourriture via le plugin `mineflayer-auto-eat` avec seuil de déclenchement configurable.
 - **Supervision en Temps Réel** :
@@ -40,14 +40,14 @@ Le bot est capable de se connecter à un serveur Minecraft distant ou local, de 
 L'ensemble de la base de code suit des conventions claires, uniformes et adaptées aux interactions hybrides Python/Node.js.
 
 ### 2.1 Arborescence & Fichiers
-- **Dossiers** : Minuscules strictes, mots simples ou composés sans séparateur (`config`, `eliza`, `scripts`, `utils`).
-- **Scripts exécutables / Points d'entrée** : Kebab-case ou notation hybride historiquement conservée (`scripts/Pathfind-chat.py`, `scripts/multi-bot.py`).
-- **Modules utilitaires et bibliothèques** : `snake_case` (`utils/vec3_conversion.py`, `eliza/eliza.py`).
-- **Fichiers de données et de templates** : Suffixes `.txt` ajoutés aux formats natifs (`package.json.txt`, `requirements.txt.txt`, `points.py.txt`, `server.py.txt`) afin de prévenir les règles d'exclusion `.gitignore` (notamment sur `*.json` lié aux tokens d'authentification) ou pour servir de gabarits.
+- **Dossiers** : Minuscules strictes, mots simples ou composés sans séparateur (`config`, `scripts`, `utils`).
+- **Scripts exécutables / Points d'entrée** : Kebab-case ou notation hybride historiquement conservée (`scripts/multi-bot.py`).
+- **Modules utilitaires et bibliothèques** : `snake_case` (`utils/vec3_conversion.py`, `llm_agent.py`).
+- **Fichiers de données et de templates** : Suffixes `.txt` ajoutés à certains formats natifs (`package.json.txt`, `points.py.txt`, `server.py.txt`) pour servir de gabarits. `requirements.txt` reste au format standard (nécessaire à `pip install -r`).
 
 ### 2.2 Classes
 - **Notation** : `PascalCase` (UpperCamelCase).
-- **Exemples** : `MCBot`, `Eliza`, `Key`, `Decomp`.
+- **Exemples** : `MCBot`, `ConversationAgent`, `Key`, `Decomp`.
 
 ### 2.3 Fonctions et Méthodes
 - **Notation** : `snake_case`.
@@ -106,9 +106,8 @@ L'ensemble de la base de code suit des conventions claires, uniformes et adapté
 Le projet est architecturé autour de modules clairs :
 - `config/` : Centralisation des paramètres réseau, coordonnées et points d'intérêt.
 - `utils/` : Fonctions d'aide purement algorithmiques ou de formatage (`vec3_conversion.py`).
-- `eliza/` : Moteur conversationnel autonome et scripts de dialogue (`doctor.txt`).
-- `scripts/` : Scripts de déploiement et exécution directe (`Pathfind-chat.py`, `multi-bot.py`).
-- **Règle de portabilité d'exécution** : Des miroirs locaux des dossiers utilitaires (`scripts/eliza`, `scripts/utils`) accompagnent les scripts afin que l'exécution soit fonctionnelle que le script soit lancé depuis la racine du projet ou depuis le sous-dossier `scripts/`.
+- `scripts/` : Scripts de déploiement et exécution directe (`bot.py`, `orchestrator.py`, `multi-bot.py`). `bot.py` sert aussi de point d'entrée en sous-processus pour l'orchestrateur (configuration via variables d'environnement : `BOT_NAME`, `BOT_ROLE`, `ASSIGNED_DISTRICT`, `WEB_INVENTORY_PORT`, `ENABLE_STDIN_REPL`).
+- **Règle de portabilité d'exécution** : Un miroir local du dossier utilitaire (`scripts/utils`) accompagne les scripts afin que l'exécution soit fonctionnelle que le script soit lancé depuis la racine du projet ou depuis le sous-dossier `scripts/`.
 
 ### 3.4 Dispatcheur Centralisé de Commandes
 - Toutes les instructions (qu'elles proviennent de l'entrée console terminal ou du chat multijoueur) convergent vers un dispatcheur unique : `handle_command(self, command, sender=None)`.
@@ -154,7 +153,7 @@ Les journaux d'activité en console doivent utiliser `simple_chalk` pour apporte
   - `chalk.red` / `chalk.redBright` : Erreurs critiques, échecs de pathfinding, expulsions (`kicked`).
   - `chalk.yellow` : Alertes, messages chat entrants, annulation ou arrêt de tâche (`✓ Tâche arrêtée`).
   - `chalk.magenta` : Coordonnées de ciblage et trajectoires de déplacement.
-  - `chalk.cyan` / `chalk.cyanBright` : Métadonnées d'itinéraires, relances réseau, répliques ELIZA.
+  - `chalk.cyan` / `chalk.cyanBright` : Métadonnées d'itinéraires, relances réseau, répliques de l'agent de conversation.
   - `chalk.gray` : Lignes d'aide, synthèses secondaires, listes contextuelles.
 
 ### 4.3 Traitement des Exceptions

@@ -1,6 +1,6 @@
 from javascript import require, On, off
 from simple_chalk import chalk
-from eliza import eliza
+from llm_agent import ConversationAgent
 from utils.vec3_conversion import vec3_to_str
 try:
     from utils.auth_manager import (
@@ -45,7 +45,22 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 
 mineflayer = require("mineflayer")
 pathfinder_lib = require("mineflayer-pathfinder")
-auto_eat = require("mineflayer-auto-eat").default
+
+try:
+    auto_eat_module = require("mineflayer-auto-eat")
+    auto_eat = (
+        getattr(auto_eat_module, "loader", None)
+        or getattr(auto_eat_module, "default", None)
+        or auto_eat_module
+    )
+except Exception:
+    auto_eat = None
+
+try:
+    web_inventory = require("mineflayer-web-inventory")
+except Exception:
+    web_inventory = None
+
 vec3 = require("vec3")
 
 
@@ -55,9 +70,10 @@ vec3 = require("vec3")
 
 class MCBot(MovementMixin, ChestMixin, CommandsMixin):
 
-    def __init__(self, name, enable_console=False):
+    def __init__(self, name, enable_console=False, pipe_mode=False):
         self.bot_name = name
         self.enable_console = enable_console
+        self.pipe_mode = pipe_mode
         self.reconnect = RECONNECT
         self.mode = "IDLE"
         self.patrol_active = False
@@ -68,18 +84,19 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         self.route_wait = 0
         self.route_arrived_event = threading.Event()
         self.task_generation = 0
+        self.web_inventory_started = False
 
-        # Une instance ELIZA par bot : indispensable dès qu'on
+        # Fleet : rôle et quartier assignés par l'orchestrateur (env vars),
+        # vides en mode bot unique.
+        self.bot_role = os.getenv("BOT_ROLE", "leader").lower()
+        self.is_leader = self.bot_role == "leader"
+        self.assigned_district = os.getenv("ASSIGNED_DISTRICT", "")
+        self.web_inventory_port = int(os.getenv("WEB_INVENTORY_PORT", "3000"))
+
+        # Un agent de conversation par bot : indispensable dès qu'on
         # fait tourner plusieurs bots en même temps (chacun garde
         # sa propre conversation, pas de state partagé).
-        self.eliza_bot = eliza.Eliza()
-        self.eliza_bot.load(
-            os.path.join(
-                os.path.dirname(__file__),
-                "eliza",
-                "doctor.txt",
-            )
-        )
+        self.conversation = ConversationAgent(name)
 
         # Gestion des jetons et double authentification (2FA) isolée par bot
         auth_tokens_dir = os.getenv("AUTH_TOKENS_DIR", "./tokens")
@@ -139,6 +156,11 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         if self.enable_console:
             threading.Thread(
                 target=self.terminal_loop,
+                daemon=True,
+            ).start()
+        elif self.pipe_mode:
+            threading.Thread(
+                target=self.pipe_listener_loop,
                 daemon=True,
             ).start()
 
@@ -433,13 +455,46 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         movements.allow1by1towers = False
         self.bot.pathfinder.setMovements(movements)
 
-        self.bot.loadPlugin(auto_eat)
+        if auto_eat and callable(auto_eat):
+            try:
+                self.bot.loadPlugin(auto_eat)
+                eat_opts = {
+                    "priority": "foodPoints",
+                    "startAt": 14,
+                    "bannedFood": [],
+                }
+                if hasattr(self.bot, "autoEat"):
+                    if hasattr(self.bot.autoEat, "options"):
+                        self.bot.autoEat.options = eat_opts
+                    elif hasattr(self.bot.autoEat, "setOpts"):
+                        self.bot.autoEat.setOpts(eat_opts)
+            except Exception as e:
+                self.log(chalk.yellow(f"Auto-eat plugin warning: {e}"))
 
-        self.bot.autoEat.options = {
-            "priority": "foodPoints",
-            "startAt": 14,
-            "bannedFood": [],
-        }
+        # Un seul serveur web pour toute la vie du process,
+        # inutile de le relancer à chaque reconnexion.
+        if web_inventory and not self.web_inventory_started:
+            try:
+                web_inventory(
+                    self.bot,
+                    {"port": self.web_inventory_port},
+                )
+
+                self.web_inventory_started = True
+
+                self.log(
+                    chalk.green(
+                        f"Inventaire web : "
+                        f"http://localhost:{self.web_inventory_port}"
+                    )
+                )
+
+            except Exception as e:
+                self.log(
+                    chalk.red(
+                        f"Web inventory error: {e}"
+                    )
+                )
 
         self.start_events()
 
@@ -477,14 +532,33 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         @On(self.bot, "spawn")
         def spawn():
             try:
-                message = self.eliza_bot.initial()
-                self.chat(message)
+                # Seul le leader dit bonjour, pour éviter le spam
+                # quand plusieurs bots de la flotte spawnent ensemble.
+                if self.is_leader:
+                    message = self.conversation.greeting()
+                    self.chat(message)
 
-                self.log(
-                    chalk.green(
-                        f"ELIZA: {message}"
+                    self.log(
+                        chalk.green(
+                            f"LLM: {message}"
+                        )
                     )
-                )
+
+                if self.assigned_district:
+                    def auto_patrol():
+                        time.sleep(3)
+                        self.log(
+                            chalk.cyan(
+                                f"Démarrage automatique de patrouille sur : "
+                                f"{self.assigned_district}"
+                            )
+                        )
+                        self.handle_patrol_command(self.assigned_district)
+
+                    threading.Thread(
+                        target=auto_patrol,
+                        daemon=True,
+                    ).start()
 
             except Exception as e:
                 self.log(
@@ -670,3 +744,21 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
 
                 time.sleep(2)
                 self.start_bot()
+
+
+# ============================================================
+# START (point d'entrée pour un lancement direct ou en
+# sous-processus supervisé par l'orchestrateur multi-bot)
+# ============================================================
+
+if __name__ == "__main__":
+    _bot_name = os.getenv("BOT_NAME", "Moisurunautrecom")
+    _enable_stdin_repl = (
+        os.getenv("ENABLE_STDIN_REPL", "true").lower() in ("true", "1", "yes")
+    )
+
+    MCBot(
+        _bot_name,
+        enable_console=_enable_stdin_repl,
+        pipe_mode=not _enable_stdin_repl,
+    )

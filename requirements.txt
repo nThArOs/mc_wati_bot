@@ -2,3 +2,4 @@ javascript
 simple-chalk
 python-dotenv
 pyotp
+ollama

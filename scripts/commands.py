@@ -1,5 +1,6 @@
 from simple_chalk import chalk
 from points import POINTS_INTERET, QUARTIERS
+import sys
 import time
 
 
@@ -27,7 +28,7 @@ class CommandsMixin:
         if lower == "quit":
             self.reconnect = False
             self.cancel_task()
-            self.chat(self.eliza_bot.final())
+            self.chat("À plus tard !")
 
             try:
                 self.bot.quit()
@@ -207,24 +208,24 @@ class CommandsMixin:
                 return True
 
         # ----------------------------------------------------
-        # ELIZA
+        # AGENT DE CONVERSATION (LLM)
         # ----------------------------------------------------
 
         try:
-            response = self.eliza_bot.respond(command)
+            response = self.conversation.respond(sender, command)
 
             if response:
                 self.chat(response)
                 self.log(
                     chalk.cyan(
-                        f"ELIZA: {response}"
+                        f"LLM: {response}"
                     )
                 )
 
         except Exception as e:
             self.log(
                 chalk.red(
-                    f"ELIZA error: {e}"
+                    f"LLM error: {e}"
                 )
             )
 
@@ -286,6 +287,24 @@ class CommandsMixin:
                 except Exception:
                     pass
 
+                break
+
+
+    def pipe_listener_loop(self):
+        """Écoute stdin en continu lorsque le bot est supervisé par un orchestrateur."""
+        while True:
+            try:
+                line = sys.stdin.readline()
+
+                if not line:
+                    break
+
+                command = line.strip()
+
+                if command:
+                    self.handle_command(command)
+
+            except Exception:
                 break
 
             except Exception as e:
