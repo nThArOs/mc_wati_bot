@@ -18,8 +18,21 @@ import threading
 
 mineflayer = require("mineflayer")
 pathfinder_lib = require("mineflayer-pathfinder")
-auto_eat = require("mineflayer-auto-eat").default
-web_inventory = require("mineflayer-web-inventory")
+try:
+    auto_eat_module = require("mineflayer-auto-eat")
+    auto_eat = (
+        getattr(auto_eat_module, "loader", None)
+        or getattr(auto_eat_module, "default", None)
+        or auto_eat_module
+    )
+except Exception:
+    auto_eat = None
+
+try:
+    web_inventory = require("mineflayer-web-inventory")
+except Exception:
+    web_inventory = None
+
 vec3 = require("vec3")
 
 
@@ -226,7 +239,7 @@ class MCBot:
 
     def log(self, message):
         try:
-            name = self.bot.username
+            name = getattr(self.bot, "username", None) or self.bot_name
         except Exception:
             name = self.bot_name
 
@@ -1203,17 +1216,25 @@ class MCBot:
             pathfinder_lib.pathfinder
         )
 
-        self.bot.loadPlugin(auto_eat)
-
-        self.bot.autoEat.options = {
-            "priority": "foodPoints",
-            "startAt": 14,
-            "bannedFood": [],
-        }
+        if auto_eat and callable(auto_eat):
+            try:
+                self.bot.loadPlugin(auto_eat)
+                eat_opts = {
+                    "priority": "foodPoints",
+                    "startAt": 14,
+                    "bannedFood": [],
+                }
+                if hasattr(self.bot, "autoEat"):
+                    if hasattr(self.bot.autoEat, "options"):
+                        self.bot.autoEat.options = eat_opts
+                    elif hasattr(self.bot.autoEat, "setOpts"):
+                        self.bot.autoEat.setOpts(eat_opts)
+            except Exception as e:
+                self.log(chalk.yellow(f"Auto-eat plugin warning: {e}"))
 
         # Un seul serveur web pour toute la vie du process,
         # inutile de le relancer à chaque reconnexion.
-        if not self.web_inventory_started:
+        if web_inventory and not self.web_inventory_started:
             try:
                 web_inventory(
                     self.bot,
