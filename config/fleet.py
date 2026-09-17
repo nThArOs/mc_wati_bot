@@ -16,6 +16,12 @@ FLEET_CONFIG = [
         "port": 3001,
         "district": "place george orwell",
     },
+    {
+        "name": "Antho1405",
+        "role": "patrol",
+        "port": 3002,
+        "district": "quartier du theatre",
+    },
 ]
 
 # Intervalle de temporisation (en secondes) entre chaque connexion de bot

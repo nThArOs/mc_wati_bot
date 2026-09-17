@@ -11,6 +11,7 @@ RECONNECT = True
 BOTS = [
     {"name": "Moisurunautrecom", "console": True, "port": 3000, "role": "leader", "district": "Haute ville"},
     {"name": "nThArOs", "console": False, "port": 3001, "role": "patrol", "district": "place george orwell"},
+    {"name": "Antho1405", "console": False, "port": 3002, "role": "patrol", "district": "quartier du theatre"},
 ]
 
 # Maison : indépendante des autres destinations

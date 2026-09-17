@@ -16,10 +16,11 @@ class TestBotSelector:
 
     def test_get_available_bots_structure(self):
         bots = get_available_bots()
-        assert len(bots) >= 2
+        assert len(bots) >= 3
         names = [b["name"] for b in bots]
         assert "Moisurunautrecom" in names
         assert "nThArOs" in names
+        assert "Antho1405" in names
 
     def test_parse_single_choice_1(self):
         selected = parse_bot_selection("1")
@@ -30,6 +31,11 @@ class TestBotSelector:
         selected = parse_bot_selection("2")
         assert len(selected) == 1
         assert selected[0]["name"] == "nThArOs"
+
+    def test_parse_single_choice_3(self):
+        selected = parse_bot_selection("3")
+        assert len(selected) == 1
+        assert selected[0]["name"] == "Antho1405"
 
     def test_parse_multiple_comma(self):
         selected = parse_bot_selection("1,2")
@@ -49,9 +55,9 @@ class TestBotSelector:
         assert len(selected) == 2
 
     def test_parse_all_keyword(self):
-        for kw in ("all", "tous", "both", "*", "3"):
+        for kw in ("all", "tous", "both", "*", "4"):
             selected = parse_bot_selection(kw)
-            assert len(selected) == 2
+            assert len(selected) == 3
 
     def test_parse_by_name(self):
         selected = parse_bot_selection("nThArOs")
@@ -61,6 +67,10 @@ class TestBotSelector:
         selected_case = parse_bot_selection("moisurunautrecom")
         assert len(selected_case) == 1
         assert selected_case[0]["name"] == "Moisurunautrecom"
+
+        selected_antho = parse_bot_selection("antho1405")
+        assert len(selected_antho) == 1
+        assert selected_antho[0]["name"] == "Antho1405"
 
     def test_parse_empty_defaults_to_1(self):
         selected = parse_bot_selection("")
@@ -102,3 +112,13 @@ class TestBotCredentialsResolver:
 
         creds = get_bot_credentials("nThArOs")
         assert creds["email"] == "mail_alias@test.com"
+
+    def test_get_bot_credentials_antho1405(self, monkeypatch):
+        monkeypatch.setenv("MICROSOFT_EMAIL", "default@test.com")
+        monkeypatch.setenv("ANTHO1405_EMAIL", "antho1405@custom.com")
+        monkeypatch.setenv("ANTHO1405_PASSWORD", "secret_antho")
+
+        creds = get_bot_credentials("Antho1405")
+        assert creds["email"] == "antho1405@custom.com"
+        assert creds["password"] == "secret_antho"
+

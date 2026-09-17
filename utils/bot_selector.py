@@ -29,6 +29,14 @@ DEFAULT_BOT_CONFIG = [
         "district": "place george orwell",
         "console": False,
     },
+    {
+        "id": "3",
+        "name": "Antho1405",
+        "role": "patrol",
+        "port": 3002,
+        "district": "quartier du theatre",
+        "console": False,
+    },
 ]
 
 
@@ -181,7 +189,7 @@ def prompt_bot_selection(available_bots=None, default_id="1"):
     print(chalk.cyan("=" * 60))
     print(
         chalk.gray(
-            f"Exemples : '1' (Moisurunautrecom), '2' (nThArOs), "
+            f"Exemples : '1' (Moisurunautrecom), '2' (nThArOs), '3' (Antho1405), "
             f"'1,2' ou '{all_idx}' (Tous)"
         )
     )
