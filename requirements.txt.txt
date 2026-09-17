@@ -1,2 +1,4 @@
 javascript
 simple-chalk
+python-dotenv
+pyotp

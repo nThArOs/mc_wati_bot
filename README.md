@@ -13,7 +13,11 @@ JavaScript bridge.
 - `livraison` : empty a chest near a point and deliver its contents to another
 - Come to player, home command
 - ELIZA chatbot (one independent conversation per bot)
-- Multi-bot ready: run several bot accounts at once from one process
+- Double authentification Microsoft (2FA / MFA) avec persistance des jetons
+- Générateur de jetons TOTP 2FA (RFC 6238 / Microsoft Authenticator)
+- Isolation des dossiers de profils de jetons par bot (`tokens/<nom_du_bot>`)
+- Web inventory viewer (port 3000 ou configurable)
+- Multi-bot ready : gestion multi-comptes unifiée ou flotte échelonnée
 
 ## Project structure
 
@@ -26,27 +30,57 @@ JavaScript bridge.
 | `commands.py` | Command dispatch (terminal + in-game chat) and the console loop |
 | `bot.py` | The `MCBot` class, mineflayer setup and events |
 | `main.py` | Entry point: starts every bot listed in `config.BOTS` |
+| `orchestrator.py` | Multi-bot fleet manager with staggered startup and chat routing |
+| `utils/auth_manager.py` | OAuth2 device code handler, token cache and TOTP 2FA |
+| `Pathfind-chat.py` | Historical standalone bot runner with full 2FA and environment support |
 
-`scripts/Pathfind-chat.py` is kept as a thin shim (`from main import bot`)
-so older run configurations still work.
+## Configuration 2FA & Jetons
+
+Copiez `.env.example` en `.env` pour personnaliser les options :
+
+- `AUTH_TOKENS_DIR` : Répertoire de stockage des jetons OAuth (par défaut `./tokens`).
+- `AUTO_OPEN_BROWSER` : Ouvre automatiquement la page Microsoft Device Login (`true`/`false`).
+- `MICROSOFT_TOTP_SECRET` : Clé secrète Base32 pour générer automatiquement le code 2FA TOTP.
+- `ENABLE_HEADLESS_AUTH` : Active la connexion 100% autonome via Playwright/Selenium en tâche de fond.
 
 ## Installation
 
 ### Python
 
-pip install -r requirements.txt
+```bash
+pip install -r requirements.txt.txt
+```
 
 ### Node.js
 
+```bash
 npm install
+```
 
 ## Run
 
+### Mode Bot Unique (Unitaire)
+```bash
+python scripts/Pathfind-chat.py
+# ou
 python scripts/main.py
+```
 
-## Multi-bot
+### Mode Flotte Multi-Bots (Orchestrateur BotManager)
+```bash
+python scripts/orchestrator.py
+```
 
-Edit `config.BOTS` to list the accounts to start:
+Dans la console de l'orchestrateur :
+- `status` : Affiche l'état des processus et ports de chaque bot.
+- `all: <commande>` : Diffuse un ordre à tous les bots (ex. `all: go home`, `all: stop`).
+- `<nom_du_bot>: <cmd>` : Pilote un bot précis (ex. `bot-patrol-1: patrouille Haute ville`).
+- `fleet patrol` : Lance les patrouilles sectorielles sur les quartiers assignés.
+- In-game : utilisez les préfixes `!all <action>` ou `!<nom_du_bot> <action>`.
+
+### Multi-bot classique (via config.BOTS)
+
+Modifiez `config.BOTS` pour lister les comptes à démarrer :
 
 ```python
 BOTS = [
@@ -55,15 +89,11 @@ BOTS = [
 ]
 ```
 
-Each entry needs its own Minecraft/Microsoft account (two bots can't
-share a username). Only one entry should have `"console": True` at a
-time — that's the one whose terminal reads your typed commands; the
-others only respond to in-game chat. Every bot gets its own ELIZA
-conversation and its own patrol/travel state, nothing is shared.
+Chaque entrée nécessite son propre compte Minecraft/Microsoft. Un seul bot doit avoir `"console": True` à la fois (celui qui écoute la console du terminal).
 
 ## Commands
 
-Available from the terminal (console bot only) and from in-game chat:
+### Commandes Générales (Terminal & Chat en jeu)
 
 - `go <point|player>` / `go home` — walk straight to a destination
 - `home` — alias for `go home`
@@ -76,8 +106,13 @@ Available from the terminal (console bot only) and from in-game chat:
 - `stop` — cancel the current task
 - `quit` — disconnect
 
-In-game chat also understands `viens`/`come to me` and a few French
-`va à ...` phrasings.
+In-game chat also understands `viens`/`come to me` et les commandes en français (`va à ...`).
+
+### Commandes Console 2FA
+
+- `auth status` / `statut auth` : Affiche l'état des jetons en cache et du 2FA.
+- `auth totp` : Génère le jeton TOTP actuel et affiche le temps restant avant expiration.
+- `auth clear` : Supprime les jetons en cache pour forcer une nouvelle validation 2FA.
 
 ## Roadmap
 
@@ -85,5 +120,4 @@ In-game chat also understands `viens`/`come to me` and a few French
   reach points outside the town by routing through nether portals
   (portal points paired per dimension, route steps typed `walk` vs
   `portal`, waiting for the dimension change instead of pathfinding
-  across it). Not implemented yet — see project notes for the planned
-  design.
+  across it).

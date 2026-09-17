@@ -1,4 +1,21 @@
 from javascript import require, On, Once, AsyncTask, once, off
+from simple_chalk import chalk
+import os
+import sys
+
+# Import utils
+try:
+    from utils.auth_manager import (
+        TokenManager,
+        TOTPManager,
+        MfaDeviceCodeHandler,
+    )
+except ImportError:
+    from scripts.utils.auth_manager import (
+        TokenManager,
+        TOTPManager,
+        MfaDeviceCodeHandler,
+    )
 
 # Import the javascript libraries
 mineflayer = require("mineflayer")
@@ -7,19 +24,60 @@ mineflayer = require("mineflayer")
 server_host = "localhost"
 server_port = 3000
 reconnect = True
+auth_mode = os.getenv("AUTH_MODE", "microsoft")
+auth_tokens_dir = os.getenv("AUTH_TOKENS_DIR", "./tokens")
+auto_open_browser = (
+    os.getenv("AUTO_OPEN_BROWSER", "true").lower() in ("true", "1", "yes")
+)
+totp_secret = os.getenv("MICROSOFT_TOTP_SECRET", "")
 
 
 class MCBot:
 
     def __init__(self, bot_name):
+        self.reconnect = reconnect
+        self.bot_name = bot_name
+
+        # Gestion des jetons et double authentification (2FA) isolée par bot
+        self.token_manager = TokenManager(
+            bot_name=bot_name,
+            base_dir=auth_tokens_dir,
+        )
+        self.totp_manager = TOTPManager(
+            secret=totp_secret,
+        )
+        self.mfa_handler = MfaDeviceCodeHandler(
+            bot_name=bot_name,
+            totp_manager=self.totp_manager,
+            auto_open_browser=auto_open_browser,
+            logger=lambda msg: print(f"[{bot_name}] {msg}"),
+        )
+
         self.bot_args = {
             "host": server_host,
             "port": server_port,
             "username": bot_name,
+            "auth": auth_mode,
+            "profilesFolder": self.token_manager.get_profile_path(),
+            "onMsaCode": self.mfa_handler.on_msa_code,
             "hideErrors": False,
         }
-        self.reconnect = reconnect
-        self.bot_name = bot_name
+
+        if self.token_manager.has_cached_tokens():
+            summary = self.token_manager.get_token_summary()
+            print(
+                chalk.green(
+                    f"[{bot_name}] ✓ Jetons en cache trouvés ({summary['file_count']} fichier(s)). "
+                    f"Connexion persistante."
+                )
+            )
+        else:
+            print(
+                chalk.yellow(
+                    f"[{bot_name}] Aucun jeton en cache. Authentification 2FA requise."
+                )
+            )
+
         self.start_bot()
 
     # Start mineflayer bot
