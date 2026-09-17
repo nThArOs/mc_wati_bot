@@ -48,6 +48,19 @@ npm install
 
 ## Run
 
+### Mode Bot Unique (Unitaire)
 ```bash
 python scripts/Pathfind-chat.py
 ```
+
+### Mode Flotte Multi-Bots (Orchestrateur BotManager)
+```bash
+python scripts/orchestrator.py
+```
+
+Dans la console de l'orchestrateur :
+- `status` : Affiche l'état des processus et ports de chaque bot.
+- `all: <commande>` : Diffuse un ordre à tous les bots (ex. `all: go home`, `all: stop`).
+- `<nom_du_bot>: <cmd>` : Pilote un bot précis (ex. `bot-patrol-1: patrouille Haute ville`).
+- `fleet patrol` : Lance les patrouilles sectorielles sur les quartiers assignés.
+- In-game : utilisez les préfixes `!all <action>` ou `!<nom_du_bot> <action>`.

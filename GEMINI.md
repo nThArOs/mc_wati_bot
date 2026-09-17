@@ -117,6 +117,13 @@ Le projet est architecturé autour de modules clairs :
 ### 3.5 Résilience Réseau
 - L'événement de fin de connexion (`@On(self.bot, "end")`) prend en charge la purge des ressources, la temporisation de sécurité (`time.sleep(2)`) et la relance automatique via `start_bot()` si le drapeau `self.reconnect` est actif.
 
+### 3.6 Automatisation des Commits par l'Agent IA
+- Après chaque évolution, correctif ou fonctionnalité finalisée avec succès :
+  1. Lancer la suite de tests unitaires (`python -m pytest tests/`).
+  2. Si les tests passent, exécuter un commit Git propre regroupant les fichiers modifiés et créés.
+  3. Formater le message selon la norme Conventional Commits (ex. `feat(auth): ...`, `feat(orchestrator): ...`, `fix(pathfind): ...`).
+  4. Indiquer le hash et le message du commit dans la réponse finale.
+
 ---
 
 ## 4. Normalisation et Règles de Style du Code

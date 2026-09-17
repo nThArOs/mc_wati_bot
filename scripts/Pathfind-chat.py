@@ -27,12 +27,18 @@ vec3 = require("vec3")
 # CONFIG
 # ============================================================
 
-SERVER_HOST = "game02.octoheberg.fr"
-SERVER_PORT = 25571
-BOT_NAME = "pathfinder-bot"
-RECONNECT = True
+SERVER_HOST = os.getenv("SERVER_HOST", "game02.octoheberg.fr")
+SERVER_PORT = int(os.getenv("SERVER_PORT", "25571"))
+BOT_NAME = os.getenv("BOT_NAME", "pathfinder-bot")
+RECONNECT = os.getenv("RECONNECT", "true").lower() in ("true", "1", "yes")
 
-WEB_INVENTORY_PORT = 3000
+WEB_INVENTORY_PORT = int(os.getenv("WEB_INVENTORY_PORT", "3000"))
+BOT_ROLE = os.getenv("BOT_ROLE", "leader").lower()
+IS_LEADER = (BOT_ROLE == "leader")
+ENABLE_STDIN_REPL = (
+    os.getenv("ENABLE_STDIN_REPL", "true").lower() in ("true", "1", "yes")
+)
+ASSIGNED_DISTRICT = os.getenv("ASSIGNED_DISTRICT", "")
 
 # Authentification Microsoft & Jetons 2FA
 AUTH_TOKENS_DIR = os.getenv("AUTH_TOKENS_DIR", "./tokens")
@@ -202,10 +208,16 @@ class MCBot:
 
         self.start_bot()
 
-        threading.Thread(
-            target=self.terminal_loop,
-            daemon=True,
-        ).start()
+        if ENABLE_STDIN_REPL:
+            threading.Thread(
+                target=self.terminal_loop,
+                daemon=True,
+            ).start()
+        else:
+            threading.Thread(
+                target=self.pipe_listener_loop,
+                daemon=True,
+            ).start()
 
 
     # ========================================================
@@ -1069,6 +1081,10 @@ class MCBot:
         # ELIZA
         # ----------------------------------------------------
 
+        # Seul le bot leader répond avec ELIZA dans le chat in-game
+        if not IS_LEADER and sender is not None:
+            return True
+
         try:
             response = eliza_bot.respond(command)
 
@@ -1152,6 +1168,21 @@ class MCBot:
                         f"Terminal error: {e}"
                     )
                 )
+
+
+    def pipe_listener_loop(self):
+        """Écoute stdin en continu lorsque le bot est supervisé par un orchestrateur."""
+        import sys
+        while True:
+            try:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                command = line.strip()
+                if command:
+                    self.handle_command(command)
+            except Exception:
+                break
 
 
     # ========================================================
@@ -1241,14 +1272,32 @@ class MCBot:
         @On(self.bot, "spawn")
         def spawn():
             try:
-                message = eliza_bot.initial()
-                self.chat(message)
+                # Seul le bot leader engage la conversation ELIZA pour éviter le spam
+                if IS_LEADER:
+                    message = eliza_bot.initial()
+                    self.chat(message)
 
-                self.log(
-                    chalk.green(
-                        f"ELIZA: {message}"
+                    self.log(
+                        chalk.green(
+                            f"ELIZA (Leader): {message}"
+                        )
                     )
-                )
+
+                # Démarrage automatique de la patrouille si un quartier est assigné
+                if ASSIGNED_DISTRICT:
+                    def auto_patrol():
+                        time.sleep(3)
+                        self.log(
+                            chalk.cyan(
+                                f"Démarrage automatique de patrouille sur : {ASSIGNED_DISTRICT}"
+                            )
+                        )
+                        self.handle_patrol_command(ASSIGNED_DISTRICT)
+
+                    threading.Thread(
+                        target=auto_patrol,
+                        daemon=True,
+                    ).start()
 
             except Exception as e:
                 self.log(
@@ -1372,6 +1421,31 @@ class MCBot:
                     f"Chat: {text}"
                 )
             )
+
+            # ------------------------------------------------
+            # ROUTAGE MULTI-BOTS (!all, !<nom_du_bot>)
+            # ------------------------------------------------
+            current_name = self.bot_name.lower()
+            try:
+                bot_user = (
+                    self.bot.username.lower()
+                    if self.bot.username
+                    else current_name
+                )
+            except Exception:
+                bot_user = current_name
+
+            if text.startswith("!"):
+                lower_text = text.lower()
+                if lower_text.startswith("!all "):
+                    text = text[5:].strip()
+                elif lower_text.startswith(f"!{current_name} "):
+                    text = text[len(current_name) + 2:].strip()
+                elif lower_text.startswith(f"!{bot_user} "):
+                    text = text[len(bot_user) + 2:].strip()
+                else:
+                    # Message ciblé pour un autre bot de la flotte -> ignorer
+                    return
 
             # ------------------------------------------------
             # COME TO ME
