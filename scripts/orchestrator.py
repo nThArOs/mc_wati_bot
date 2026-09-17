@@ -357,6 +357,13 @@ class BotManager:
 # ============================================================
 
 if __name__ == "__main__":
-    manager = BotManager()
+    try:
+        from utils.bot_selector import select_bots
+    except ImportError:
+        from scripts.utils.bot_selector import select_bots
+
+    selected = select_bots()
+    manager = BotManager(fleet_config=selected)
     manager.start_fleet()
     manager.terminal_loop()
+

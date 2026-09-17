@@ -7,14 +7,10 @@ SERVER_PORT = 25571
 BOT_VERSION = "1.21.11"
 RECONNECT = True
 
-# Un compte Minecraft/Microsoft différent est nécessaire pour
-# chaque bot (deux comptes ne peuvent pas partager un pseudo).
-# Un seul bot avec "console": True à la fois : c'est celui qui
-# lira les commandes tapées dans le terminal. Les autres ne
-# répondent qu'au chat en jeu.
+# Configuration des bots proposés
 BOTS = [
-    {"name": "pathfinder-bot", "console": True},
-    # {"name": "pathfinder-bot-2", "console": False},
+    {"name": "Moisurunautrecom", "console": True, "port": 3000, "role": "leader", "district": "Haute ville"},
+    {"name": "nThArOs", "console": False, "port": 3001, "role": "patrol", "district": "place george orwell"},
 ]
 
 # Maison : indépendante des autres destinations

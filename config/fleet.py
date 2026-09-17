@@ -5,22 +5,16 @@
 # Liste des instances déployées par l'orchestrateur
 FLEET_CONFIG = [
     {
-        "name": "bot-leader",
+        "name": "Moisurunautrecom",
         "role": "leader",
         "port": 3000,
         "district": "Haute ville",
     },
     {
-        "name": "bot-patrol-1",
+        "name": "nThArOs",
         "role": "patrol",
         "port": 3001,
         "district": "place george orwell",
-    },
-    {
-        "name": "bot-patrol-2",
-        "role": "patrol",
-        "port": 3002,
-        "district": "quartier du theatre",
     },
 ]
 

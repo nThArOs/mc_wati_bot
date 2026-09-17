@@ -2,12 +2,22 @@ from javascript import require, On, off
 from simple_chalk import chalk
 from eliza import eliza
 from utils.vec3_conversion import vec3_to_str
-from utils.auth_manager import (
-    TokenManager,
-    TOTPManager,
-    MfaDeviceCodeHandler,
-)
+try:
+    from utils.auth_manager import (
+        TokenManager,
+        TOTPManager,
+        MfaDeviceCodeHandler,
+        get_bot_credentials,
+    )
+except ImportError:
+    from scripts.utils.auth_manager import (
+        TokenManager,
+        TOTPManager,
+        MfaDeviceCodeHandler,
+        get_bot_credentials,
+    )
 import os
+import sys
 import time
 import threading
 
@@ -42,11 +52,39 @@ vec3 = require("vec3")
 
 SERVER_HOST = os.getenv("SERVER_HOST", "game02.octoheberg.fr")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "25571"))
-BOT_NAME = os.getenv("BOT_NAME", "pathfinder-bot")
-RECONNECT = os.getenv("RECONNECT", "true").lower() in ("true", "1", "yes")
 
-WEB_INVENTORY_PORT = int(os.getenv("WEB_INVENTORY_PORT", "3000"))
-BOT_ROLE = os.getenv("BOT_ROLE", "leader").lower()
+# Sélection dynamique du bot si non imposé par l'environnement
+if "BOT_NAME" not in os.environ and sys.stdin and sys.stdin.isatty():
+    try:
+        from utils.bot_selector import select_bots
+    except ImportError:
+        from scripts.utils.bot_selector import select_bots
+
+    _chosen = select_bots()
+    if len(_chosen) > 1:
+        try:
+            from scripts.orchestrator import BotManager
+        except ImportError:
+            from orchestrator import BotManager
+
+        _mgr = BotManager(fleet_config=_chosen)
+        _mgr.start_fleet()
+        _mgr.terminal_loop()
+        sys.exit(0)
+    elif _chosen:
+        BOT_NAME = _chosen[0]["name"]
+        WEB_INVENTORY_PORT = _chosen[0].get("port", 3000)
+        BOT_ROLE = _chosen[0].get("role", "leader")
+    else:
+        BOT_NAME = "Moisurunautrecom"
+        WEB_INVENTORY_PORT = int(os.getenv("WEB_INVENTORY_PORT", "3000"))
+        BOT_ROLE = os.getenv("BOT_ROLE", "leader").lower()
+else:
+    BOT_NAME = os.getenv("BOT_NAME", "Moisurunautrecom")
+    WEB_INVENTORY_PORT = int(os.getenv("WEB_INVENTORY_PORT", "3000"))
+    BOT_ROLE = os.getenv("BOT_ROLE", "leader").lower()
+
+RECONNECT = os.getenv("RECONNECT", "true").lower() in ("true", "1", "yes")
 IS_LEADER = (BOT_ROLE == "leader")
 ENABLE_STDIN_REPL = (
     os.getenv("ENABLE_STDIN_REPL", "true").lower() in ("true", "1", "yes")
@@ -180,21 +218,22 @@ class MCBot:
         self.web_inventory_started = False
         self.task_generation = 0
 
-        # Gestion des jetons et double authentification (2FA)
+        # Gestion des jetons et double authentification (2FA) isolée par bot
+        creds = get_bot_credentials(name)
         self.token_manager = TokenManager(
             bot_name=name,
             base_dir=AUTH_TOKENS_DIR,
         )
         self.totp_manager = TOTPManager(
-            secret=MICROSOFT_TOTP_SECRET,
+            secret=creds["totp_secret"],
         )
         self.mfa_handler = MfaDeviceCodeHandler(
             bot_name=name,
             totp_manager=self.totp_manager,
             auto_open_browser=AUTO_OPEN_BROWSER,
             logger=self.log,
-            headless_email=MICROSOFT_EMAIL,
-            headless_password=MICROSOFT_PASSWORD,
+            headless_email=creds["email"],
+            headless_password=creds["password"],
             enable_headless=ENABLE_HEADLESS_AUTH,
         )
 

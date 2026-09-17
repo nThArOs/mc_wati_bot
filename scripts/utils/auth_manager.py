@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import shutil
 import struct
 import sys
 import threading
@@ -140,6 +142,56 @@ class TokenManager:
         self.base_dir = os.path.abspath(base_dir)
         self.profile_dir = os.path.join(self.base_dir, bot_name)
         self.ensure_directory()
+        self._check_and_migrate_legacy_cache()
+
+    def _check_and_migrate_legacy_cache(self):
+        """Si le dossier de jetons est vide, tente d'importer les jetons existants
+        depuis un autre profil (ex: pathfinder-bot) dont le compte correspond à ce bot.
+        """
+        if self.has_cached_tokens():
+            return
+
+        if not os.path.exists(self.base_dir):
+            return
+
+        for item in os.listdir(self.base_dir):
+            candidate_dir = os.path.join(self.base_dir, item)
+            if not os.path.isdir(candidate_dir) or candidate_dir == self.profile_dir:
+                continue
+
+            candidate_files = []
+            try:
+                for f in os.listdir(candidate_dir):
+                    if f.endswith(".json"):
+                        fp = os.path.join(candidate_dir, f)
+                        if os.path.getsize(fp) > 10:
+                            candidate_files.append((f, fp))
+            except OSError:
+                continue
+
+            if not candidate_files:
+                continue
+
+            # Vérifier si l'un des fichiers contient le nom du bot
+            matched = False
+            for fname, fpath in candidate_files:
+                try:
+                    with open(fpath, "r", encoding="utf-8", errors="ignore") as fp:
+                        content = fp.read()
+                        if self.bot_name.lower() in content.lower():
+                            matched = True
+                            break
+                except Exception:
+                    pass
+
+            if matched:
+                for fname, fpath in candidate_files:
+                    dst = os.path.join(self.profile_dir, fname)
+                    try:
+                        shutil.copy2(fpath, dst)
+                    except Exception:
+                        pass
+                break
 
     def ensure_directory(self):
         os.makedirs(self.profile_dir, exist_ok=True)
@@ -778,3 +830,50 @@ class MfaDeviceCodeHandler:
                 headless=self.enable_headless,
                 logger=self.logger,
             )
+
+
+# ============================================================
+# BOT CREDENTIALS RESOLVER
+# ============================================================
+
+def get_bot_credentials(bot_name):
+    """Résout les identifiants Microsoft et clé secrète TOTP pour un bot donné.
+
+    Priorités de recherche des variables d'environnement :
+      1. Préfixe spécifique avec nom du bot (ex: NTHAROS_EMAIL, NTHAROS_PASSWORD)
+      2. Préfixe spécifique alternatif (ex: MICROSOFT_EMAIL_NTHAROS)
+      3. Variables génériques globales (MICROSOFT_EMAIL, MICROSOFT_MAIL, etc.)
+    """
+    clean_name = re.sub(r"[^a-zA-Z0-9]", "_", bot_name).upper()
+
+    email = (
+        os.getenv(f"{clean_name}_MICROSOFT_EMAIL")
+        or os.getenv(f"{clean_name}_MICROSOFT_MAIL")
+        or os.getenv(f"{clean_name}_EMAIL")
+        or os.getenv(f"{clean_name}_MAIL")
+        or os.getenv(f"MICROSOFT_EMAIL_{clean_name}")
+        or os.getenv(f"MICROSOFT_MAIL_{clean_name}")
+        or os.getenv("MICROSOFT_EMAIL")
+        or os.getenv("MICROSOFT_MAIL", "")
+    )
+
+    password = (
+        os.getenv(f"{clean_name}_MICROSOFT_PASSWORD")
+        or os.getenv(f"{clean_name}_PASSWORD")
+        or os.getenv(f"MICROSOFT_PASSWORD_{clean_name}")
+        or os.getenv("MICROSOFT_PASSWORD", "")
+    )
+
+    totp_secret = (
+        os.getenv(f"{clean_name}_MICROSOFT_TOTP_SECRET")
+        or os.getenv(f"{clean_name}_TOTP_SECRET")
+        or os.getenv(f"MICROSOFT_TOTP_SECRET_{clean_name}")
+        or os.getenv("MICROSOFT_TOTP_SECRET", "")
+    )
+
+    return {
+        "email": email,
+        "password": password,
+        "totp_secret": totp_secret,
+    }
+

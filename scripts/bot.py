@@ -2,6 +2,20 @@ from javascript import require, On, off
 from simple_chalk import chalk
 from eliza import eliza
 from utils.vec3_conversion import vec3_to_str
+try:
+    from utils.auth_manager import (
+        TokenManager,
+        TOTPManager,
+        MfaDeviceCodeHandler,
+        get_bot_credentials,
+    )
+except ImportError:
+    from scripts.utils.auth_manager import (
+        TokenManager,
+        TOTPManager,
+        MfaDeviceCodeHandler,
+        get_bot_credentials,
+    )
 from config import SERVER_HOST, SERVER_PORT, BOT_VERSION, RECONNECT, HOME
 from points import POINTS_INTERET
 from movement import MovementMixin
@@ -54,6 +68,33 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
             )
         )
 
+        # Gestion des jetons et double authentification (2FA) isolée par bot
+        auth_tokens_dir = os.getenv("AUTH_TOKENS_DIR", "./tokens")
+        auto_open_browser = (
+            os.getenv("AUTO_OPEN_BROWSER", "true").lower() in ("true", "1", "yes")
+        )
+        enable_headless = (
+            os.getenv("ENABLE_HEADLESS_AUTH", "false").lower() in ("true", "1", "yes")
+        )
+        creds = get_bot_credentials(name)
+
+        self.token_manager = TokenManager(
+            bot_name=name,
+            base_dir=auth_tokens_dir,
+        )
+        self.totp_manager = TOTPManager(
+            secret=creds["totp_secret"],
+        )
+        self.mfa_handler = MfaDeviceCodeHandler(
+            bot_name=name,
+            totp_manager=self.totp_manager,
+            auto_open_browser=auto_open_browser,
+            logger=self.log,
+            headless_email=creds["email"],
+            headless_password=creds["password"],
+            enable_headless=enable_headless,
+        )
+
         self.bot_args = {
             "host": SERVER_HOST,
             "port": SERVER_PORT,
@@ -61,7 +102,24 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
             "auth": "microsoft",
             "version": BOT_VERSION,
             "hideErrors": False,
+            "profilesFolder": self.token_manager.get_profile_path(),
+            "onMsaCode": self.mfa_handler.on_msa_code,
         }
+
+        if self.token_manager.has_cached_tokens():
+            summary = self.token_manager.get_token_summary()
+            self.log(
+                chalk.green(
+                    f"✓ Jetons de session détectés dans {summary['profile_dir']} "
+                    f"({summary['file_count']} fichier(s)). Connexion persistante sans 2FA."
+                )
+            )
+        else:
+            self.log(
+                chalk.yellow(
+                    "Aucun jeton en cache. Authentification 2FA requise."
+                )
+            )
 
         self.start_bot()
 

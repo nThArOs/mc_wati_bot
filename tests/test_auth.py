@@ -91,6 +91,20 @@ class TestTokenManager:
         summary = tm.get_token_summary()
         assert summary["has_tokens"] is False
 
+    def test_legacy_cache_migration(self, temp_tokens_dir):
+        # Profil source contenant des jetons pour Moisurunautrecom
+        src_dir = os.path.join(temp_tokens_dir, "pathfinder-bot")
+        os.makedirs(src_dir, exist_ok=True)
+        with open(os.path.join(src_dir, "test-cache.json"), "w", encoding="utf-8") as f:
+            f.write('{"name": "Moisurunautrecom", "token": "valide123456"}')
+
+        # Nouveau profil ciblant Moisurunautrecom
+        tm = TokenManager("Moisurunautrecom", base_dir=temp_tokens_dir)
+        assert tm.has_cached_tokens()
+        summary = tm.get_token_summary()
+        assert summary["has_tokens"] is True
+        assert "test-cache.json" in summary["files"]
+
 
 class TestMfaDeviceCodeHandler:
 
