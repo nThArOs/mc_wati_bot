@@ -2,6 +2,11 @@ from javascript import require, On, off
 from simple_chalk import chalk
 from eliza import eliza
 from utils.vec3_conversion import vec3_to_str
+from utils.auth_manager import (
+    TokenManager,
+    TOTPManager,
+    MfaDeviceCodeHandler,
+)
 import os
 import time
 import threading
@@ -28,6 +33,18 @@ BOT_NAME = "pathfinder-bot"
 RECONNECT = True
 
 WEB_INVENTORY_PORT = 3000
+
+# Authentification Microsoft & Jetons 2FA
+AUTH_TOKENS_DIR = os.getenv("AUTH_TOKENS_DIR", "./tokens")
+AUTO_OPEN_BROWSER = (
+    os.getenv("AUTO_OPEN_BROWSER", "true").lower() in ("true", "1", "yes")
+)
+MICROSOFT_TOTP_SECRET = os.getenv("MICROSOFT_TOTP_SECRET", "")
+MICROSOFT_EMAIL = os.getenv("MICROSOFT_EMAIL", "")
+MICROSOFT_PASSWORD = os.getenv("MICROSOFT_PASSWORD", "")
+ENABLE_HEADLESS_AUTH = (
+    os.getenv("ENABLE_HEADLESS_AUTH", "false").lower() in ("true", "1", "yes")
+)
 
 # Maison : indépendante des autres destinations
 HOME = {
@@ -137,6 +154,24 @@ class MCBot:
         self.web_inventory_started = False
         self.task_generation = 0
 
+        # Gestion des jetons et double authentification (2FA)
+        self.token_manager = TokenManager(
+            bot_name=name,
+            base_dir=AUTH_TOKENS_DIR,
+        )
+        self.totp_manager = TOTPManager(
+            secret=MICROSOFT_TOTP_SECRET,
+        )
+        self.mfa_handler = MfaDeviceCodeHandler(
+            bot_name=name,
+            totp_manager=self.totp_manager,
+            auto_open_browser=AUTO_OPEN_BROWSER,
+            logger=self.log,
+            headless_email=MICROSOFT_EMAIL,
+            headless_password=MICROSOFT_PASSWORD,
+            enable_headless=ENABLE_HEADLESS_AUTH,
+        )
+
         self.bot_args = {
             "host": SERVER_HOST,
             "port": SERVER_PORT,
@@ -144,7 +179,26 @@ class MCBot:
             "auth": "microsoft",
             "version": "1.21.11",
             "hideErrors": False,
+            "profilesFolder": self.token_manager.get_profile_path(),
+            "onMsaCode": self.mfa_handler.on_msa_code,
         }
+
+        # Rapport initial sur les jetons
+        if self.token_manager.has_cached_tokens():
+            summary = self.token_manager.get_token_summary()
+            self.log(
+                chalk.green(
+                    f"✓ Jetons de session détectés dans {summary['profile_dir']} "
+                    f"({summary['file_count']} fichier(s)). Connexion persistante sans 2FA."
+                )
+            )
+        else:
+            self.log(
+                chalk.yellow(
+                    f"Aucun jeton en cache dans {self.token_manager.get_profile_path()}. "
+                    f"Authentification 2FA requise au démarrage."
+                )
+            )
 
         self.start_bot()
 
@@ -788,6 +842,90 @@ class MCBot:
             self.log(
                 chalk.yellow("✓ Tâche arrêtée.")
             )
+            return True
+
+        # ----------------------------------------------------
+        # AUTHENTIFICATION & JETONS 2FA
+        # ----------------------------------------------------
+
+        if lower in ("auth", "auth status", "statut auth"):
+            summary = self.token_manager.get_token_summary()
+            print()
+            print(chalk.cyan("=" * 60))
+            print(chalk.cyanBright(" ÉTAT DE L'AUTHENTIFICATION & DES JETONS (2FA)"))
+            print(chalk.cyan("=" * 60))
+            print(f"  Bot : {summary['bot_name']}")
+            print(f"  Dossier profil : {summary['profile_dir']}")
+            token_status = (
+                chalk.green(f"Oui ({summary['file_count']} fichier(s))")
+                if summary["has_tokens"]
+                else chalk.yellow("Non (première authentification requise)")
+            )
+            print(f"  Jetons en cache : {token_status}")
+            if summary["files"]:
+                print(f"  Fichiers : {', '.join(summary['files'])}")
+            print(f"  Dernière mise à jour : {summary['last_modified']}")
+            if summary["account_hint"]:
+                print(f"  Compte associé : {chalk.magenta(summary['account_hint'])}")
+            print(f"  Jeton 2FA TOTP : {self.totp_manager.format_status()}")
+            print(chalk.cyan("=" * 60))
+            print()
+            return True
+
+        if lower in ("auth totp", "totp"):
+            if not self.totp_manager.is_configured():
+                print()
+                print(
+                    chalk.yellow(
+                        "Aucune clé secrète TOTP configurée (définir MICROSOFT_TOTP_SECRET)."
+                    )
+                )
+                print()
+            else:
+                code, remaining = self.totp_manager.generate_code()
+                color = chalk.green if remaining > 10 else chalk.yellow
+                print()
+                print(
+                    chalk.green("✓ Jeton TOTP 2FA actuel : ")
+                    + chalk.cyanBright(code)
+                    + " "
+                    + color(f"({remaining}s restantes)")
+                )
+                print()
+            return True
+
+        if lower in ("auth clear", "clear tokens", "reset auth"):
+            deleted = self.token_manager.clear_tokens()
+            self.log(
+                chalk.yellow(
+                    f"✓ {deleted} fichier(s) de jetons supprimé(s). "
+                    f"Une nouvelle validation 2FA sera effectuée à la prochaine connexion."
+                )
+            )
+            return True
+
+        # ----------------------------------------------------
+        # HELP / AIDE
+        # ----------------------------------------------------
+
+        if lower in ("help", "aide"):
+            print()
+            print(chalk.cyan("=" * 60))
+            print(chalk.cyanBright(" COMMANDES DISPONIBLES"))
+            print(chalk.cyan("=" * 60))
+            print("  - go <destination> / va à <lieu> : Se déplacer vers un point d'intérêt")
+            print("  - home / maison : Rentrer au point d'apparition HOME")
+            print("  - patrouille [quartier] : Démarrer une patrouille en boucle sur le graphe")
+            print("  - chemin <lieu> / route <lieu> : Trajet ponctuel via le graphe")
+            print("  - quartiers : Lister les quartiers urbains disponibles")
+            print("  - players / joueurs : Lister les joueurs connectés et leurs positions")
+            print("  - auth status : Consulter l'état des jetons de session et du 2FA")
+            print("  - auth totp : Afficher le jeton TOTP 2FA actuel et le temps restant")
+            print("  - auth clear : Réinitialiser les jetons en cache (forcer un nouveau 2FA)")
+            print("  - stop : Stopper immédiatement la tâche en cours")
+            print("  - quit : Déconnecter le bot et quitter le programme")
+            print(chalk.cyan("=" * 60))
+            print()
             return True
 
         # ----------------------------------------------------
