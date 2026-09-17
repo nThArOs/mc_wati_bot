@@ -22,8 +22,21 @@ from movement import MovementMixin
 from chest import ChestMixin
 from commands import CommandsMixin
 import os
+import sys
 import time
 import threading
+
+# Configuration de l'encodage standard UTF-8 sur Windows
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -136,11 +149,20 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
 
     def log(self, message):
         try:
-            name = self.bot.username
+            name = getattr(self.bot, "username", None) or self.bot_name
         except Exception:
             name = self.bot_name
 
-        print(f"[{name}] {message}")
+        text = f"[{name}] {message}"
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            try:
+                encoding = sys.stdout.encoding or "utf-8"
+                print(text.encode(encoding, errors="replace").decode(encoding))
+            except Exception:
+                safe_text = text.replace("✓", "[OK]").encode("ascii", errors="replace").decode("ascii")
+                print(safe_text)
 
 
     def new_task(self, mode):

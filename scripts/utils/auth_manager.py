@@ -63,19 +63,6 @@ class TOTPManager:
         ts = int(time.time() if timestamp is None else timestamp)
         remaining = self.interval - (ts % self.interval)
 
-        # Utilisation de pyotp si la bibliothèque est présente
-        try:
-            import pyotp
-
-            totp = pyotp.TOTP(
-                active_secret,
-                digits=self.digits,
-                interval=self.interval,
-            )
-            return totp.at(ts), remaining
-        except ImportError:
-            pass
-
         # Implémentation native standard RFC 6238 (HMAC-SHA1)
         try:
             padding_needed = (8 - len(active_secret) % 8) % 8
@@ -141,8 +128,58 @@ class TokenManager:
         self.bot_name = bot_name
         self.base_dir = os.path.abspath(base_dir)
         self.profile_dir = os.path.join(self.base_dir, bot_name)
+        self.expected_hash = hashlib.sha1(bot_name.encode("utf-8")).hexdigest()[:6]
         self.ensure_directory()
         self._check_and_migrate_legacy_cache()
+        self._align_cache_hash_prefixes()
+
+    def _align_cache_hash_prefixes(self):
+        """Assure que les fichiers de cache portent le préfixe de hash sha1 attendu
+        par prismarine-auth (crypto.createHash('sha1').update(username).digest('hex')[:6]).
+        Si des fichiers valides existent avec un autre préfixe (ex: suite à migration),
+        ils sont synchronisés sous le préfixe cible.
+        """
+        if not os.path.exists(self.profile_dir):
+            return
+
+        try:
+            files = os.listdir(self.profile_dir)
+        except OSError:
+            return
+
+        valid_cache_by_type = {}
+        for fname in files:
+            if not fname.endswith(".json"):
+                continue
+            fp = os.path.join(self.profile_dir, fname)
+            try:
+                if os.path.getsize(fp) > 10:
+                    m = re.match(r"^[a-f0-9]{6}_(.*)$", fname)
+                    if m:
+                        cache_type = m.group(1)
+                        if cache_type not in valid_cache_by_type:
+                            valid_cache_by_type[cache_type] = fp
+            except OSError:
+                continue
+
+        for cache_type, valid_fp in valid_cache_by_type.items():
+            target_name = f"{self.expected_hash}_{cache_type}"
+            target_path = os.path.join(self.profile_dir, target_name)
+            needs_copy = False
+            if not os.path.exists(target_path):
+                needs_copy = True
+            else:
+                try:
+                    if os.path.getsize(target_path) <= 10:
+                        needs_copy = True
+                except OSError:
+                    needs_copy = True
+
+            if needs_copy and os.path.abspath(valid_fp) != os.path.abspath(target_path):
+                try:
+                    shutil.copy2(valid_fp, target_path)
+                except Exception:
+                    pass
 
     def _check_and_migrate_legacy_cache(self):
         """Si le dossier de jetons est vide, tente d'importer les jetons existants
@@ -191,6 +228,15 @@ class TokenManager:
                         shutil.copy2(fpath, dst)
                     except Exception:
                         pass
+                    m = re.match(r"^[a-f0-9]{6}_(.*)$", fname)
+                    if m:
+                        dst_aligned = os.path.join(
+                            self.profile_dir, f"{self.expected_hash}_{m.group(1)}"
+                        )
+                        try:
+                            shutil.copy2(fpath, dst_aligned)
+                        except Exception:
+                            pass
                 break
 
     def ensure_directory(self):
@@ -222,15 +268,20 @@ class TokenManager:
         return token_files
 
     def has_cached_tokens(self):
+        self._align_cache_hash_prefixes()
         files = self.list_token_files()
+        for f in files:
+            if f["size"] > 10 and f["name"].startswith(f"{self.expected_hash}_"):
+                return True
         for f in files:
             if f["size"] > 10:
                 return True
         return False
 
     def get_token_summary(self):
+        self._align_cache_hash_prefixes()
         files = self.list_token_files()
-        has_tokens = any(f["size"] > 10 for f in files)
+        has_tokens = self.has_cached_tokens()
 
         account_hint = None
         for f in files:
@@ -254,6 +305,7 @@ class TokenManager:
 
         return {
             "bot_name": self.bot_name,
+            "expected_hash": self.expected_hash,
             "profile_dir": self.profile_dir,
             "has_tokens": has_tokens,
             "file_count": len(files),

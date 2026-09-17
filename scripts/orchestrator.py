@@ -9,6 +9,18 @@ import threading
 import subprocess
 from simple_chalk import chalk
 
+# Configuration de l'encodage standard UTF-8 sur Windows
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Chargement de la configuration de la flotte
 try:
     from config.fleet import FLEET_CONFIG, STAGGER_DELAY
@@ -54,6 +66,8 @@ class BotProcess:
             return False
 
         env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         env["BOT_NAME"] = self.name
         env["BOT_ROLE"] = self.role
         env["WEB_INVENTORY_PORT"] = str(self.port)
@@ -71,6 +85,8 @@ class BotProcess:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
                 universal_newlines=True,
             )

@@ -124,6 +124,11 @@ Le projet est architecturé autour de modules clairs :
   3. Formater le message selon la norme Conventional Commits (ex. `feat(auth): ...`, `feat(orchestrator): ...`, `fix(pathfind): ...`).
   4. Indiquer le hash et le message du commit dans la réponse finale.
 
+### 3.7 Gestion des Jetons & Contournement de la Connexion Selenium
+- Lorsque des jetons de session sont déjà existants dans le profil du compte (`./tokens/<nom_du_bot>/`), l'authentification est persistante et réutilisée directement par le bridge Mineflayer / Prismarine-auth.
+- Dans ce cas, **aucune étape de connexion Selenium, ouverture de navigateur ou saisie d'identifiants n'est nécessaire ni ne doit être exécutée**.
+- Le flux Selenium (`AutomatedAuthLogin`) et le gestionnaire 2FA (`MfaDeviceCodeHandler`) ne servent que de procédure initiale ou de secours lorsque les jetons sont totalement absents ou invalidés.
+
 ---
 
 ## 4. Normalisation et Règles de Style du Code

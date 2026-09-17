@@ -105,6 +105,20 @@ class TestTokenManager:
         assert summary["has_tokens"] is True
         assert "test-cache.json" in summary["files"]
 
+    def test_cache_hash_prefix_alignment(self, temp_tokens_dir):
+        # Profil créé pour Moisurunautrecom avec des fichiers sous préfixe ccafb8
+        tm = TokenManager("Moisurunautrecom", base_dir=temp_tokens_dir)
+        profile_dir = tm.get_profile_path()
+        with open(os.path.join(profile_dir, "ccafb8_live-cache.json"), "w", encoding="utf-8") as f:
+            f.write('{"valid_token": "secret_data_12345"}')
+
+        assert tm.has_cached_tokens()
+        # Vérifie que le fichier bf37f0_live-cache.json a bien été créé automatiquement
+        expected_file = os.path.join(profile_dir, "bf37f0_live-cache.json")
+        assert os.path.exists(expected_file)
+        with open(expected_file, "r", encoding="utf-8") as f:
+            assert "secret_data_12345" in f.read()
+
 
 class TestMfaDeviceCodeHandler:
 

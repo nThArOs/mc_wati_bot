@@ -5,6 +5,18 @@
 import os
 import sys
 
+# Configuration de l'encodage standard UTF-8 sur Windows
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Configuration des chemins d'importation
 root_dir = os.path.dirname(os.path.abspath(__file__))
 scripts_dir = os.path.join(root_dir, "scripts")
