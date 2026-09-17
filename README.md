@@ -5,17 +5,34 @@ JavaScript bridge.
 
 ## Features
 
-- Pathfinder
+- Pathfinder (forced to follow built roads, no digging/tower shortcuts)
 - Auto eat
-- Patrol system (graphe urbain & quartiers)
-- Points of interest
-- Come to player
-- Home command
-- ELIZA chatbot
+- Points of interest, districts (quartiers) and a navigation graph
+- `chemin`/`route` : one-shot travel to a point, shortest path over the graph
+- `patrouille` : endless patrol, either the whole town or a single district
+- `livraison` : empty a chest near a point and deliver its contents to another
+- Come to player, home command
+- ELIZA chatbot (one independent conversation per bot)
 - Double authentification Microsoft (2FA / MFA) avec persistance des jetons
 - Générateur de jetons TOTP 2FA (RFC 6238 / Microsoft Authenticator)
 - Isolation des dossiers de profils de jetons par bot (`tokens/<nom_du_bot>`)
-- Web inventory viewer (port 3000)
+- Web inventory viewer (port 3000 ou configurable)
+- Multi-bot ready : gestion multi-comptes unifiée ou flotte échelonnée
+
+## Project structure
+
+| File | Responsibility |
+|---|---|
+| `config.py` | Server address, bot accounts, timing/behaviour settings |
+| `points.py` | World data: points of interest, districts, navigation graph |
+| `movement.py` | Graph pathfinding, patrol and one-shot travel engine |
+| `chest.py` | Chest interaction and delivery logic |
+| `commands.py` | Command dispatch (terminal + in-game chat) and the console loop |
+| `bot.py` | The `MCBot` class, mineflayer setup and events |
+| `main.py` | Entry point: starts every bot listed in `config.BOTS` |
+| `orchestrator.py` | Multi-bot fleet manager with staggered startup and chat routing |
+| `utils/auth_manager.py` | OAuth2 device code handler, token cache and TOTP 2FA |
+| `Pathfind-chat.py` | Historical standalone bot runner with full 2FA and environment support |
 
 ## Configuration 2FA & Jetons
 
@@ -24,13 +41,7 @@ Copiez `.env.example` en `.env` pour personnaliser les options :
 - `AUTH_TOKENS_DIR` : Répertoire de stockage des jetons OAuth (par défaut `./tokens`).
 - `AUTO_OPEN_BROWSER` : Ouvre automatiquement la page Microsoft Device Login (`true`/`false`).
 - `MICROSOFT_TOTP_SECRET` : Clé secrète Base32 pour générer automatiquement le code 2FA TOTP.
-- `ENABLE_HEADLESS_AUTH` : Active la connexion 100% autonome via Selenium en tâche de fond.
-
-## Commandes Console 2FA
-
-- `auth status` / `statut auth` : Affiche l'état des jetons en cache et du 2FA.
-- `auth totp` : Génère le jeton TOTP actuel et affiche le temps restant avant expiration.
-- `auth clear` : Supprime les jetons en cache pour forcer une nouvelle validation 2FA.
+- `ENABLE_HEADLESS_AUTH` : Active la connexion 100% autonome via Playwright/Selenium en tâche de fond.
 
 ## Installation
 
@@ -51,6 +62,8 @@ npm install
 ### Mode Bot Unique (Unitaire)
 ```bash
 python scripts/Pathfind-chat.py
+# ou
+python scripts/main.py
 ```
 
 ### Mode Flotte Multi-Bots (Orchestrateur BotManager)
@@ -64,3 +77,47 @@ Dans la console de l'orchestrateur :
 - `<nom_du_bot>: <cmd>` : Pilote un bot précis (ex. `bot-patrol-1: patrouille Haute ville`).
 - `fleet patrol` : Lance les patrouilles sectorielles sur les quartiers assignés.
 - In-game : utilisez les préfixes `!all <action>` ou `!<nom_du_bot> <action>`.
+
+### Multi-bot classique (via config.BOTS)
+
+Modifiez `config.BOTS` pour lister les comptes à démarrer :
+
+```python
+BOTS = [
+    {"name": "pathfinder-bot", "console": True},
+    {"name": "second-account", "console": False},
+]
+```
+
+Chaque entrée nécessite son propre compte Minecraft/Microsoft. Un seul bot doit avoir `"console": True` à la fois (celui qui écoute la console du terminal).
+
+## Commands
+
+### Commandes Générales (Terminal & Chat en jeu)
+
+- `go <point|player>` / `go home` — walk straight to a destination
+- `home` — alias for `go home`
+- `chemin <point>` / `route <point>` — walk to a point following the graph
+- `patrouille` / `patrouille <quartier>` — endless patrol, town-wide or one district
+- `livraison <point>` — empty the nearest chest at `<point>` and deliver it
+- `quartiers` — list known districts
+- `players` — list visible players
+- `say <message>` — chat
+- `stop` — cancel the current task
+- `quit` — disconnect
+
+In-game chat also understands `viens`/`come to me` et les commandes en français (`va à ...`).
+
+### Commandes Console 2FA
+
+- `auth status` / `statut auth` : Affiche l'état des jetons en cache et du 2FA.
+- `auth totp` : Génère le jeton TOTP actuel et affiche le temps restant avant expiration.
+- `auth clear` : Supprime les jetons en cache pour forcer une nouvelle validation 2FA.
+
+## Roadmap
+
+- **Nether hub travel**: extend the graph so `chemin`/`livraison` can
+  reach points outside the town by routing through nether portals
+  (portal points paired per dimension, route steps typed `walk` vs
+  `portal`, waiting for the dimension change instead of pathfinding
+  across it).
