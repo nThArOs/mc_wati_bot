@@ -105,6 +105,12 @@ BOTS = [
 
 Chaque entrée nécessite son propre compte Minecraft/Microsoft. Un seul bot doit avoir `"console": True` à la fois (celui qui écoute la console du terminal).
 
+## Graphe de navigation
+
+Points d'intérêt, quartiers et routes définis dans `points.py` (`POINTS_INTERET`, `QUARTIERS`, `GRAPH`) :
+
+![Graphe de navigation](docs/navigation-graph.svg)
+
 ## Commands
 
 ### Commandes Générales (Terminal & Chat en jeu)
