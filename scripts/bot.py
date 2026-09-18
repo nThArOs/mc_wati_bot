@@ -61,6 +61,15 @@ try:
 except Exception:
     web_inventory = None
 
+try:
+    armor_manager_module = require("mineflayer-armor-manager")
+    armor_manager = (
+        getattr(armor_manager_module, "default", None)
+        or armor_manager_module
+    )
+except Exception:
+    armor_manager = None
+
 vec3 = require("vec3")
 
 
@@ -355,19 +364,29 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
     # ========================================================
 
     def find_player(self, name):
-        name = name.strip().lower()
+        name = str(name).strip().lower()
 
         try:
-            for player_name, data in self.bot.players.items():
+            players = self.bot.players
 
-                if player_name.lower() == name:
-                    if data.entity:
-                        return player_name, data.entity
+            # Les objets JS n'ont pas de .keys()/.items() Python :
+            # "for x in proxy" déclenche le vrai protocole d'énumération
+            # du bridge (javascript/JSPyBridge), à la différence d'un
+            # appel de méthode qui chercherait une propriété JS inexistante.
+            for player_name in players:
+                if str(player_name).lower() != name:
+                    continue
 
-        except Exception as e:
+                data = players[player_name]
+
+                if data and data.entity:
+                    return player_name, data.entity
+
+        except Exception:
+            import traceback
             self.log(
                 chalk.red(
-                    f"Player search error: {e}"
+                    f"Player search error:\n{traceback.format_exc()}"
                 )
             )
 
@@ -376,12 +395,21 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
 
     def find_player_uuid(self, uuid):
         try:
-            for name, data in self.bot.players.items():
-                if data.uuid == uuid and data.entity:
+            players = self.bot.players
+
+            for player_name in players:
+                data = players[player_name]
+
+                if data and str(data.uuid) == str(uuid) and data.entity:
                     return data.entity
 
         except Exception:
-            pass
+            import traceback
+            self.log(
+                chalk.red(
+                    f"Player search error (uuid):\n{traceback.format_exc()}"
+                )
+            )
 
         return None
 
@@ -414,16 +442,29 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
     def list_players(self):
         print()
 
-        for name, data in self.bot.players.items():
-            if data.entity:
-                print(
-                    f"  - {name} "
-                    f"{vec3_to_str(data.entity.position)}"
+        try:
+            players = self.bot.players
+
+            for name in players:
+                data = players[name]
+
+                if data and data.entity:
+                    print(
+                        f"  - {name} "
+                        f"{vec3_to_str(data.entity.position)}"
+                    )
+                else:
+                    print(
+                        f"  - {name} (position inconnue)"
+                    )
+
+        except Exception:
+            import traceback
+            self.log(
+                chalk.red(
+                    f"List players error:\n{traceback.format_exc()}"
                 )
-            else:
-                print(
-                    f"  - {name} (position inconnue)"
-                )
+            )
 
         print()
 
@@ -453,6 +494,7 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         movements = pathfinder_lib.Movements(self.bot)
         movements.canDig = False
         movements.allow1by1towers = False
+        movements.canPlace = False
         self.bot.pathfinder.setMovements(movements)
 
         if auto_eat and callable(auto_eat):
@@ -470,6 +512,12 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
                         self.bot.autoEat.setOpts(eat_opts)
             except Exception as e:
                 self.log(chalk.yellow(f"Auto-eat plugin warning: {e}"))
+
+        if armor_manager and callable(armor_manager):
+            try:
+                self.bot.loadPlugin(armor_manager)
+            except Exception as e:
+                self.log(chalk.yellow(f"Armor manager plugin warning: {e}"))
 
         # Un seul serveur web pour toute la vie du process,
         # inutile de le relancer à chaque reconnexion.
@@ -532,6 +580,19 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         @On(self.bot, "spawn")
         def spawn():
             try:
+                # Charger le plugin ne fait qu'équiper automatiquement
+                # les nouveaux objets ramassés : il faut déclencher
+                # explicitement une passe sur l'inventaire existant.
+                if hasattr(self.bot, "armorManager"):
+                    try:
+                        self.bot.armorManager.equipAll()
+                    except Exception as e:
+                        self.log(
+                            chalk.yellow(
+                                f"Armor manager equipAll warning: {e}"
+                            )
+                        )
+
                 # Seul le leader dit bonjour, pour éviter le spam
                 # quand plusieurs bots de la flotte spawnent ensemble.
                 if self.is_leader:
@@ -662,26 +723,65 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
             if messagePosition != "chat":
                 return
 
-            if (
+            text = message.strip()
+
+            # Ce serveur formate le chat en "<joueur> message" au lieu
+            # d'envoyer un UUID d'expéditeur fiable (sender est souvent
+            # vide/incohérent) : on extrait le nom depuis le préfixe et
+            # on s'en sert comme identité, avec sender en secours.
+            player_name = None
+
+            if text.startswith("<"):
+                end = text.find(">")
+
+                if end != -1:
+                    player_name = text[1:end].strip()
+                    text = text[end + 1:].strip()
+
+            if player_name:
+                if player_name.lower() == str(self.bot.username or "").lower():
+                    return
+            elif (
                 self.bot.player
                 and sender == self.bot.player.uuid
             ):
                 return
 
-            text = message.strip()
-
-            # Retire <joueur>
-            if text.startswith("<"):
-                end = text.find(">")
-
-                if end != -1:
-                    text = text[end + 1:].strip()
+            identity = player_name or sender
 
             self.log(
                 chalk.yellow(
                     f"Chat: {text}"
                 )
             )
+
+            # ------------------------------------------------
+            # ROUTAGE MULTI-BOTS (!all, !<nom_du_bot>)
+            # ------------------------------------------------
+
+            current_name = self.bot_name.lower()
+
+            try:
+                bot_user = (
+                    str(self.bot.username).lower()
+                    if self.bot.username
+                    else current_name
+                )
+            except Exception:
+                bot_user = current_name
+
+            if text.startswith("!"):
+                lower_text = text.lower()
+
+                if lower_text.startswith("!all "):
+                    text = text[5:].strip()
+                elif lower_text.startswith(f"!{current_name} "):
+                    text = text[len(current_name) + 2:].strip()
+                elif lower_text.startswith(f"!{bot_user} "):
+                    text = text[len(bot_user) + 2:].strip()
+                else:
+                    # Message ciblé pour un autre bot de la flotte -> ignorer
+                    return
 
             # ------------------------------------------------
             # COME TO ME
@@ -696,7 +796,12 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
                 "come to me",
             ):
 
-                entity = self.find_player_uuid(sender)
+                found = (
+                    self.find_player(player_name)
+                    if player_name
+                    else None
+                )
+                entity = found[1] if found else self.find_player_uuid(sender)
 
                 if not entity:
                     self.chat(
@@ -708,7 +813,7 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
 
                 self.go_to_coords(
                     pos.x,
-                    pos.y + 1,
+                    pos.y,
                     pos.z,
                     "PLAYER",
                     "J'arrive !",
@@ -722,7 +827,7 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
 
             self.handle_command(
                 text,
-                sender,
+                identity,
             )
 
 

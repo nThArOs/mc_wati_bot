@@ -7,6 +7,7 @@ JavaScript bridge.
 
 - Pathfinder (forced to follow built roads, no digging/tower shortcuts)
 - Auto eat
+- Auto equip armor (mineflayer-armor-manager)
 - Points of interest, districts (quartiers) and a navigation graph
 - `chemin`/`route` : one-shot travel to a point, shortest path over the graph
 - `patrouille` : endless patrol, either the whole town or a single district
