@@ -53,12 +53,14 @@ try:
         or getattr(auto_eat_module, "default", None)
         or auto_eat_module
     )
-except Exception:
+except Exception as e:
+    print(f"[bot.py] mineflayer-auto-eat indisponible : {e}")
     auto_eat = None
 
 try:
     web_inventory = require("mineflayer-web-inventory")
-except Exception:
+except Exception as e:
+    print(f"[bot.py] mineflayer-web-inventory indisponible : {e}")
     web_inventory = None
 
 try:
@@ -67,8 +69,15 @@ try:
         getattr(armor_manager_module, "default", None)
         or armor_manager_module
     )
-except Exception:
+except Exception as e:
+    print(f"[bot.py] mineflayer-armor-manager indisponible : {e}")
     armor_manager = None
+
+try:
+    prismarine_viewer = require("prismarine-viewer").mineflayer
+except Exception as e:
+    print(f"[bot.py] prismarine-viewer indisponible : {e}")
+    prismarine_viewer = None
 
 vec3 = require("vec3")
 
@@ -94,6 +103,7 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         self.route_arrived_event = threading.Event()
         self.task_generation = 0
         self.web_inventory_started = False
+        self.viewer_started = False
 
         # Fleet : rôle et quartier assignés par l'orchestrateur (env vars),
         # vides en mode bot unique.
@@ -101,6 +111,9 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
         self.is_leader = self.bot_role == "leader"
         self.assigned_district = os.getenv("ASSIGNED_DISTRICT", "")
         self.web_inventory_port = int(os.getenv("WEB_INVENTORY_PORT", "3000"))
+        self.viewer_port = int(
+            os.getenv("VIEWER_PORT", str(self.web_inventory_port + 100))
+        )
 
         # Un agent de conversation par bot : indispensable dès qu'on
         # fait tourner plusieurs bots en même temps (chacun garde
@@ -541,6 +554,29 @@ class MCBot(MovementMixin, ChestMixin, CommandsMixin):
                 self.log(
                     chalk.red(
                         f"Web inventory error: {e}"
+                    )
+                )
+
+        if prismarine_viewer and not self.viewer_started:
+            try:
+                prismarine_viewer(
+                    self.bot,
+                    {"port": self.viewer_port, "firstPerson": True},
+                )
+
+                self.viewer_started = True
+
+                self.log(
+                    chalk.green(
+                        f"Viewer 3D : "
+                        f"http://localhost:{self.viewer_port}"
+                    )
+                )
+
+            except Exception as e:
+                self.log(
+                    chalk.red(
+                        f"Viewer error: {e}"
                     )
                 )
 

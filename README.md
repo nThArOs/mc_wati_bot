@@ -18,6 +18,7 @@ JavaScript bridge.
 - Générateur de jetons TOTP 2FA (RFC 6238 / Microsoft Authenticator)
 - Isolation des dossiers de profils de jetons par bot (`tokens/<nom_du_bot>`)
 - Web inventory viewer (port 3000 ou configurable)
+- Viewer 3D en jeu (prismarine-viewer, port 3100 ou configurable via `VIEWER_PORT`)
 - Multi-bot ready : gestion multi-comptes unifiée ou flotte échelonnée
 
 ## Project structure
